@@ -424,15 +424,91 @@
     ::-webkit-scrollbar-track { background: var(--bg2); }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    @media (max-width: 768px) {
-      nav { display: none; }
-      main { padding: 24px 20px 60px; }
+    html { scroll-behavior: smooth; }
+
+    /* ── Table scroll on small screens ── */
+    .answer table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── Mobile hamburger button ── */
+    .nav-toggle {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 200;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .nav-toggle span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--text2);
+      border-radius: 2px;
+      transition: all .2s;
     }
 
-    html { scroll-behavior: smooth; }
+    /* Nav overlay backdrop */
+    .nav-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 99;
+    }
+
+    @media (max-width: 768px) {
+      .nav-toggle { display: flex; }
+
+      nav {
+        position: fixed;
+        left: -280px;
+        top: 0;
+        height: 100vh;
+        z-index: 100;
+        transition: left .25s ease;
+        width: 260px;
+        min-width: 260px;
+      }
+      nav.open { left: 0; }
+      .nav-backdrop.open { display: block; }
+
+      main {
+        padding: 64px 16px 60px;
+        max-width: 100%;
+      }
+
+      /* Tighten up answer blocks */
+      .answer { padding: 16px 14px; }
+      .question { padding: 14px 16px; }
+      .answer pre { padding: 12px 14px; font-size: 12px; }
+      .answer code { font-size: 12px; }
+      .arch-box { font-size: 11.5px; padding: 14px; }
+      .answer h2 { font-size: 16px; }
+      .answer h3 { font-size: 14px; }
+      .answer p, .answer li { font-size: 13.5px; }
+
+      /* Full-width feature cards */
+      .feature-card { margin: 8px 0; }
+
+      /* Page header tighten */
+      .page-header { margin-bottom: 28px; }
+      .page-header h2 { font-size: 20px; }
+    }
   </style>
 </head>
 <body>
+
+<!-- hamburger button -->
+<button class="nav-toggle" id="navToggle" aria-label="開啟選單">
+  <span></span><span></span><span></span>
+</button>
+<div class="nav-backdrop" id="navBackdrop"></div>
 
 <!-- ── Sidebar ── -->
 <nav>
@@ -2115,158 +2191,65 @@ else:
       <div class="qa-divider"></div>
     </div>
     <div class="question">
-      <p>到底有多少 MCP？分別做什麼？這些 MCP 都被誰採用？</p>
+      <p>到底有多少 MCP？分別做什麼？這些 MCP 都被誰採用？<br/>
+      <em>（與作者確認後修正：實際 runtime 只有 1–2 種在跑）</em></p>
     </div>
     <div class="answer">
-      <h2>兩套 MCP Catalog 要區分清楚</h2>
+      <h2>先釐清三個容易混淆的層次</h2>
 
       <div class="callout warn">
-        <strong>關鍵前提：</strong>專案裡同時存在兩套 MCP 目錄。<code>aiops-app/data/mcps.json</code> 是前端顯示用（舊 UI catalog）；<strong>實際 Runtime 呼叫的</strong>是 PostgreSQL <code>mcp_definitions</code> 表，由 Flyway migrations seed 進去。下面只談後者。
+        <strong>重要修正：</strong>之前的分析把「migration 裡有 INSERT」和「runtime 真正在跑」混在一起算了。作者說「只有 1–2 種 MCP」是正確的。以下是修正後的完整分析。
       </div>
 
-      <h2>Runtime MCP 清單（來自 Flyway migrations）</h2>
-
       <table>
-        <thead>
-          <tr><th>MCP 名稱</th><th>Migration</th><th>HTTP</th><th>端點</th><th>用途</th></tr>
-        </thead>
+        <thead><tr><th>層次</th><th>說明</th><th>數量</th></tr></thead>
         <tbody>
-          <tr>
-            <td><code>get_process_info</code></td>
-            <td>V30/V31/V84（更新 4 次）</td>
-            <td>GET</td>
-            <td><code>/api/v1/process/info</code></td>
-            <td>取單台機台/lot/step 的完整製程歷史事件（events），是所有 Source block 的核心資料源。最高頻使用。</td>
-          </tr>
-          <tr>
-            <td><code>list_active_lots</code></td>
-            <td>V17__list_mcps.sql</td>
-            <td>GET</td>
-            <td><code>/api/v1/lots?status=active</code></td>
-            <td>列出 Waiting/Processing 狀態的 lot 清單。供 <code>block_list_objects(kind='lot')</code> 使用。</td>
-          </tr>
-          <tr>
-            <td><code>list_steps</code></td>
-            <td>V17__list_mcps.sql</td>
-            <td>GET</td>
-            <td><code>/api/v1/list-steps</code></td>
-            <td>列出全廠所有製程站點（STEP_001…NNN）。供 <code>block_list_objects(kind='step')</code> 使用。</td>
-          </tr>
-          <tr>
-            <td><code>list_apcs</code></td>
-            <td>V17__list_mcps.sql</td>
-            <td>GET</td>
-            <td><code>/api/v1/list-apcs</code></td>
-            <td>列出 APC 配置清單（設備補償參數目錄）。供 <code>block_list_objects(kind='apc')</code> 使用。</td>
-          </tr>
-          <tr>
-            <td><code>list_spcs</code></td>
-            <td>V17__list_mcps.sql</td>
-            <td>GET</td>
-            <td><code>/api/v1/list-spcs</code></td>
-            <td>列出 SPC chart 種類（xbar/r/s/p/c）。供 <code>block_list_objects(kind='spc')</code> 使用。</td>
-          </tr>
-          <tr>
-            <td><code>rework_request</code></td>
-            <td>V53__rework_mcp_and_block.sql</td>
-            <td>POST</td>
-            <td><code>/api/v1/rework_request</code></td>
-            <td>查詢特定 lot 在指定 step 的 rework 紀錄。低頻使用，由 <code>block_rework_request</code> 或 <code>block_mcp_call</code> 呼叫。</td>
-          </tr>
-          <tr>
-            <td>UI Handoff 3 個<br/><code>open_lot_trace</code><br/><code>open_drill_down</code><br/><code>open_topology</code></td>
-            <td>V63__ui_handoff_mcps.sql</td>
-            <td>POST</td>
-            <td>（通知前端開面板，不查資料）</td>
-            <td>呼叫後不回傳資料，只向前端 WebSocket 推送「開啟對應 UI 面板」指令。<br/>由 Chat Agent Direct Call 或外部 MCP Server 呼叫，不進 pipeline。</td>
-          </tr>
-          <tr>
-            <td>Custom MCP<br/>（動態，用戶建立）</td>
-            <td>—（由 Admin UI 寫入）</td>
-            <td>任意</td>
-            <td>用戶自訂</td>
-            <td>Admin 建立後可自動衍生對應 Block（<code>source=mcp_auto</code>），也可被 <code>block_mcp_call</code> 直接呼叫。</td>
-          </tr>
+          <tr><td><strong>Flyway migration 定義的</strong></td><td>只是 SQL INSERT，Flyway 在 prod <strong>disabled</strong>，需手動 psql 執行，不等於 prod 有</td><td>8+ 筆</td></tr>
+          <tr><td><strong>mcp_definitions 表裡的</strong></td><td>真正存在 DB 的，取決於誰手動 apply 了哪幾支 migration</td><td>不確定</td></tr>
+          <tr><td><strong>Runtime 實際被呼叫的</strong></td><td>code 裡真正執行到的，與 DB 內容部分無關</td><td><strong>1–2 種</strong></td></tr>
         </tbody>
       </table>
 
-      <h2>誰呼叫哪個 MCP（採用者統計）</h2>
+      <h2>Runtime 真正在跑的：只有 1 個核心 + 視情況的 list_*</h2>
 
+      <h3>核心 #1 — 直連，完全繞過 MCP 體系</h3>
+      <pre><code># process_history.py:288
+# block_process_history 不查 mcp_definitions，直接 hardcode URL
+url = f"{ONTOLOGY_SIM_URL}/api/v1/process/info"
+await httpx.get(url, params=query)</code></pre>
+      <p><code>block_process_history</code> 是唯一的製程事件資料源，每次 pipeline 執行必然觸發。它走的是<strong>環境變數直連</strong>，不是 MCP 系統。「對應 <code>get_process_info</code> MCP」只是命名上的對應，runtime 沒有查 <code>mcp_definitions</code> 這一步。</p>
+
+      <h3>核心 #2（有用到才算）— list_* 透過 mcp_call 分發</h3>
+      <p><code>block_list_objects</code> 用 <code>KIND_TO_MCP</code> 對照表把 <code>kind='tool'</code> 轉成 <code>mcp_name='list_tools'</code>，再交給通用 <code>McpCallBlockExecutor</code>，後者查 Java 的 <code>mcp_definitions</code> 取 endpoint。</p>
+      <p>但這條路有前提：<strong>mcp_definitions 表裡要有這筆資料</strong>（migration 有手動 apply）。如果沒有，呼叫就失敗。且 <code>block_list_objects</code> 只在「全廠掃描」這類場景用到，一般的單台分析不會走這裡。</p>
+
+      <h3>其他定義存在但幾乎不跑的</h3>
       <table>
-        <thead>
-          <tr><th>採用者</th><th>呼叫哪些 MCP</th><th>呼叫方式</th><th>場景</th></tr>
-        </thead>
+        <thead><tr><th>MCP 名稱</th><th>定義來源</th><th>實際狀況</th></tr></thead>
         <tbody>
-          <tr>
-            <td><code>block_process_history</code></td>
-            <td><code>get_process_info</code></td>
-            <td>直接 HTTP（<code>httpx</code>，不走 MCP 體系）</td>
-            <td>Pipeline 執行時的主要資料取得，每次執行必然觸發</td>
-          </tr>
-          <tr>
-            <td><code>block_list_objects</code></td>
-            <td><code>list_active_lots</code>、<code>list_steps</code>、<code>list_apcs</code>、<code>list_spcs</code>（依 kind 參數選一）</td>
-            <td>透過 <code>JavaAPIClient.get_mcp_by_name()</code> → 拿到 endpoint_url → httpx</td>
-            <td>需要列舉設備清單再 foreach 查詢時（全廠掃描）</td>
-          </tr>
-          <tr>
-            <td><code>block_rework_request</code></td>
-            <td><code>rework_request</code></td>
-            <td>直接 HTTP POST</td>
-            <td>查 lot rework 紀錄（低頻）</td>
-          </tr>
-          <tr>
-            <td><code>block_mcp_call</code></td>
-            <td><strong>任意 MCP</strong>（params.mcp_name 指定）</td>
-            <td><code>JavaAPIClient.get_mcp_by_name()</code> → 動態解析 endpoint → httpx</td>
-            <td>通用 MCP dispatcher，可呼叫 Custom MCP 或任何 System MCP</td>
-          </tr>
-          <tr>
-            <td><code>block_mcp_foreach</code></td>
-            <td><strong>任意 MCP</strong>（同上）</td>
-            <td>同 mcp_call，但對 DataFrame 每一列並發呼叫（最多 5 並發）</td>
-            <td>全廠 N 台機台各查一次，或多 lot 批次查詢</td>
-          </tr>
-          <tr>
-            <td>Chat Agent（Direct Call）</td>
-            <td>所有 System MCP（依 <code>granted_mcps</code> 授權）</td>
-            <td><code>tool_dispatcher.py</code> 的 <code>execute_mcp</code> tool</td>
-            <td>用戶問即時狀況，不建 pipeline，直接查</td>
-          </tr>
-          <tr>
-            <td>外部 MCP Server（:8060）</td>
-            <td>UI Handoff 3 個</td>
-            <td>呼叫內部 Java API，通知前端開面板</td>
-            <td>Claude Desktop / claude.ai 操作平台時開視覺面板</td>
-          </tr>
-          <tr>
-            <td><code>McpProxyBlockExecutor</code>（V54 auto-gen）</td>
-            <td>對應的 Custom MCP（由 <code>mcp_name</code> 欄位指定）</td>
-            <td>同 mcp_call 路徑</td>
-            <td>Admin 勾選「連動 Block」後自動生成的 block，Pipeline Builder 可直接拖拉</td>
-          </tr>
+          <tr><td><code>rework_request</code></td><td>V53__rework_mcp_and_block.sql</td><td>Migration 有定義，但 test 沒有實際呼叫，功能屬於 edge case</td></tr>
+          <tr><td>UI Handoff 3 個</td><td>V63__ui_handoff_mcps.sql</td><td>只有外部 Claude Desktop 連線時才用，日常 pipeline 不觸及</td></tr>
+          <tr><td>Custom MCP（user 建立）</td><td>Admin UI 寫入</td><td>依 user 是否建立，可能 0 個也可能多個</td></tr>
         </tbody>
       </table>
 
-      <h3>架構圖：MCP 呼叫路徑全景</h3>
+      <h2>呼叫路徑全景（修正版）</h2>
       <div class="arch-box">
-<span class="hl">Pipeline 執行層</span>
-  ├── <span class="hl3">block_process_history</span> ──直接 httpx──▶ <span class="hl2">ontology_simulator :8012</span>
-  ├── <span class="hl3">block_list_objects</span>  ──JavaClient──▶ Java /internal/mcp-definitions ──▶ endpoint
-  ├── <span class="hl3">block_mcp_call</span>      ──JavaClient──▶ Java /internal/mcp-definitions ──▶ 任意 endpoint
-  ├── <span class="hl3">block_mcp_foreach</span>   ──同上，並發 5──▶ 任意 endpoint
-  └── <span class="hl3">McpProxyBlockExecutor</span> ──同 mcp_call path──▶ Custom MCP endpoint
+<span class="hl">高頻（每次 pipeline 必跑）</span>
+  <span class="hl3">block_process_history</span> ──直連 ONTOLOGY_SIM_URL──▶ <span class="hl2">:8012/api/v1/process/info</span>
+  ⚠️ 不查 mcp_definitions，完全繞過 MCP 體系
 
-<span class="hl">Chat Agent 層</span>
-  └── tool_dispatcher.execute_mcp ──JavaClient──▶ Java /internal/mcp-definitions ──▶ endpoint
-      (繞過 Pipeline，直接單次查詢)
+<span class="hl">低頻（全廠掃描才用）</span>
+  <span class="hl3">block_list_objects</span> ──KIND_TO_MCP──▶ block_mcp_call
+    ──Java /internal/mcp-definitions──▶ list_tools endpoint
+  ⚠️ 需要 migration 有手動 apply，否則找不到資料
 
-<span class="hl">外部入口</span>
-  └── MCP Server :8060 ──▶ Java + Sidecar（open_lot_trace 等推 UI）
+<span class="hl">極低頻 / 特定場景</span>
+  rework_request / UI Handoff / Custom MCP
       </div>
 
       <div class="callout">
-        <strong>一個容易混淆的點：</strong><code>block_process_history</code> 雖然對應 MCP <code>get_process_info</code>，但它<strong>不透過 MCP 體系</strong>（不查 <code>mcp_definitions</code>）。它直接把 <code>ONTOLOGY_SIM_URL</code> 環境變數拼出 endpoint 打過去，是寫死在 block 的快速路徑。其他 block（mcp_call、list_objects）才走「從 Java 動態查 endpoint」的標準 MCP 路徑。
+        <strong>結論：</strong>作者說「1–2 種」是精確描述。日常運作只有 <code>block_process_history</code> 直連這 1 條主路徑；加上偶爾用到的 <code>list_tools</code>（透過 mcp_call 走 mcp_definitions），最多算 2 種。Migration 裡定義的 8+ 筆 MCP 大多是「設計上的能力儲備」，不代表 prod 有在跑。
       </div>
     </div>
   </section>
@@ -2278,160 +2261,172 @@ else:
       <div class="qa-divider"></div>
     </div>
     <div class="question">
-      <p>Block 角度：有多少個？實際執行上對應的是 code 還是 MCP？（對應前面 MCP 整理）</p>
+      <p>Block 角度：有多少個？實際執行上對應的是 code 還是 MCP？<br/>
+      <em>（修正版：對應 Q23 的 1–2 MCP 結論）</em></p>
     </div>
     <div class="answer">
-      <h2>48 個 Builtin Block + N 個動態 MCP Proxy Block</h2>
+      <h2>48 個 Builtin Block，分三種執行方式</h2>
 
       <p>來源：<code>python_ai_sidecar/pipeline_builder/blocks/__init__.py</code> 的 <code>BUILTIN_EXECUTORS</code> dict。</p>
 
-      <h3>執行方式快速判別：3 種</h3>
       <table>
-        <thead><tr><th>類型</th><th>判別條件</th><th>執行者</th><th>外部呼叫？</th></tr></thead>
+        <thead><tr><th>執行方式</th><th>數量</th><th>判別條件</th><th>外部呼叫？</th></tr></thead>
         <tbody>
           <tr>
             <td><span class="tag tag-blue">Pure Python</span></td>
-            <td>在 BUILTIN_EXECUTORS，execute() 只操作 DataFrame</td>
-            <td>各自的 <code>BlockExecutor</code> subclass（pandas/numpy/scipy）</td>
+            <td><strong>43 個</strong></td>
+            <td>execute() 只操作 DataFrame（pandas / numpy / scipy）</td>
             <td>否</td>
           </tr>
           <tr>
-            <td><span class="tag tag-orange">MCP-backed Builtin</span></td>
-            <td>在 BUILTIN_EXECUTORS，但 execute() 發出 HTTP 請求</td>
-            <td>同上，但內部呼叫 httpx 打 ontology_simulator 或 mcp_definitions</td>
-            <td>是（HTTP）</td>
+            <td><span class="tag tag-orange">直連 HTTP</span></td>
+            <td><strong>1 個</strong></td>
+            <td><code>block_process_history</code>：hardcode <code>ONTOLOGY_SIM_URL</code>，<strong>完全不查 mcp_definitions</strong></td>
+            <td>是（直連 simulator）</td>
           </tr>
           <tr>
-            <td><span class="tag tag-purple">MCP Proxy</span></td>
-            <td><code>implementation.type == "mcp_proxy"</code>（來自 DB，不在 BUILTIN_EXECUTORS）</td>
-            <td><code>McpProxyBlockExecutor</code>（走 mcp_call 路徑）</td>
-            <td>是（HTTP，動態查 endpoint）</td>
+            <td><span class="tag tag-green">走 mcp_definitions</span></td>
+            <td><strong>4 個</strong></td>
+            <td><code>block_list_objects</code> / <code>block_mcp_call</code> / <code>block_mcp_foreach</code> / <code>block_rework_request</code>：先查 Java mcp_definitions 取 endpoint，再 httpx</td>
+            <td>是（需 DB 有資料）</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-purple">MCP Proxy（動態）</span></td>
+            <td><strong>N 個</strong></td>
+            <td><code>implementation.type=="mcp_proxy"</code>，Admin 勾選「連動 Block」後自動生成</td>
+            <td>是（走 mcp_call 路徑）</td>
           </tr>
         </tbody>
       </table>
 
-      <h3>完整 Block 分類表（48 Builtin）</h3>
+      <div class="callout warn">
+        <strong>對應 Q23 的修正：</strong>之前把 <code>block_process_history</code> 標成「MCP-backed」是不準確的。它根本不走 MCP 體系，是直連。真正走 mcp_definitions 的只有另外 4 個 block，且需要 DB 表有對應資料（migration 有手動 apply）才能執行。
+      </div>
 
-      <h4>Source — 對外取資料（MCP-backed，4 個）</h4>
+      <h3>Source Block 詳細對比（最容易混淆的地方）</h3>
       <table>
-        <thead><tr><th>Block</th><th>執行方式</th><th>對應哪個 MCP</th></tr></thead>
+        <thead><tr><th>Block</th><th>實際執行路徑</th><th>對應 Q23 的哪條路徑</th></tr></thead>
         <tbody>
-          <tr><td><code>block_process_history</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td><code>get_process_info</code>（直接 HTTP，不走 mcp_definitions 查詢）</td></tr>
-          <tr><td><code>block_list_objects</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td>依 <code>kind</code> 參數選：<code>list_active_lots</code> / <code>list_steps</code> / <code>list_apcs</code> / <code>list_spcs</code></td></tr>
-          <tr><td><code>block_rework_request</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td><code>rework_request</code>（直接 POST）</td></tr>
-          <tr><td><code>block_mcp_call</code></td><td><span class="tag tag-orange">MCP-backed（通用）</span></td><td>任意 MCP（params.mcp_name 動態指定）</td></tr>
+          <tr>
+            <td><code>block_process_history</code></td>
+            <td><span class="tag tag-orange">直連</span> <code>ONTOLOGY_SIM_URL/api/v1/process/info</code>，不查 mcp_definitions</td>
+            <td>Q23「核心 #1」— 高頻，每次 pipeline 必跑</td>
+          </tr>
+          <tr>
+            <td><code>block_list_objects</code></td>
+            <td><span class="tag tag-green">走 mcp_definitions</span>，KIND_TO_MCP 選 mcp_name → mcp_call → Java 查 endpoint</td>
+            <td>Q23「核心 #2」— 低頻，全廠掃描才用</td>
+          </tr>
+          <tr>
+            <td><code>block_mcp_call</code></td>
+            <td><span class="tag tag-green">走 mcp_definitions</span>，通用分發器，mcp_name 由 params 決定</td>
+            <td>Q23「其他」— 視 user 建的 Custom MCP 而定</td>
+          </tr>
+          <tr>
+            <td><code>block_mcp_foreach</code></td>
+            <td>同 mcp_call，但對每列並發呼叫（Semaphore 5）</td>
+            <td>同上，批量版</td>
+          </tr>
+          <tr>
+            <td><code>block_rework_request</code></td>
+            <td><span class="tag tag-green">走 mcp_definitions</span>，直接 POST rework_request endpoint</td>
+            <td>Q23「極低頻」— edge case</td>
+          </tr>
         </tbody>
       </table>
 
-      <h4>Fan-out — 批量呼叫 MCP（MCP-backed，1 個）</h4>
-      <table>
-        <thead><tr><th>Block</th><th>執行方式</th><th>說明</th></tr></thead>
-        <tbody>
-          <tr><td><code>block_mcp_foreach</code></td><td><span class="tag tag-orange">MCP-backed（並發）</span></td><td>對 DataFrame 每一列各呼叫一次 MCP，最多 5 並發。用於「N 台機台各查一次」場景。</td></tr>
-        </tbody>
-      </table>
+      <h3>43 個 Pure Python Block（不碰 MCP 的大多數）</h3>
 
-      <h4>Transform — 純 pandas 操作（Pure Python，13 個）</h4>
+      <h4>Transform（13 個）</h4>
       <table>
         <thead><tr><th>Block</th><th>pandas 操作</th></tr></thead>
         <tbody>
           <tr><td><code>block_filter</code></td><td>boolean mask，支援多條件 AND/OR，支援 nested path</td></tr>
           <tr><td><code>block_find</code></td><td>搜尋行，回傳第一筆或全部符合</td></tr>
-          <tr><td><code>block_join</code></td><td><code>pd.merge()</code> 兩個 DataFrame</td></tr>
-          <tr><td><code>block_groupby_agg</code></td><td><code>df.groupby().agg()</code> 分組聚合</td></tr>
+          <tr><td><code>block_join</code></td><td><code>pd.merge()</code></td></tr>
+          <tr><td><code>block_groupby_agg</code></td><td><code>df.groupby().agg()</code></td></tr>
           <tr><td><code>block_shift_lag</code></td><td><code>df.shift()</code> 時序偏移</td></tr>
           <tr><td><code>block_rolling_window</code></td><td><code>df.rolling()</code> 滾動統計</td></tr>
-          <tr><td><code>block_select</code></td><td>欄位選取 / rename / reorder</td></tr>
-          <tr><td><code>block_pluck</code></td><td>從 nested dict 列中提取指定 key</td></tr>
+          <tr><td><code>block_select</code></td><td>欄位選取 / rename</td></tr>
+          <tr><td><code>block_pluck</code></td><td>從 nested dict 提取 key</td></tr>
           <tr><td><code>block_unnest</code></td><td><code>df.explode()</code> 展開 list 欄位</td></tr>
           <tr><td><code>block_unpivot</code></td><td><code>df.melt()</code> 寬轉長</td></tr>
-          <tr><td><code>block_union</code></td><td><code>pd.concat()</code> 合併多個輸入</td></tr>
+          <tr><td><code>block_union</code></td><td><code>pd.concat()</code></td></tr>
           <tr><td><code>block_sort</code></td><td><code>df.sort_values()</code></td></tr>
           <tr><td><code>block_time_bucket</code></td><td><code>df.resample()</code> 時間桶聚合</td></tr>
         </tbody>
       </table>
 
-      <h4>Rules / Detection — 純 Python 邏輯（Pure Python，7 個）</h4>
+      <h4>Rules / Detection（7 個）</h4>
       <table>
         <thead><tr><th>Block</th><th>功能</th></tr></thead>
         <tbody>
-          <tr><td><code>block_step_check</code></td><td>聚合 → scalar → 比門檻 → <code>{pass: bool, value, note}</code>。Auto Patrol 必備終端。</td></tr>
-          <tr><td><code>block_threshold</code></td><td>對每列標記是否超出上/下限，輸出 <code>is_violation: bool</code> 欄位</td></tr>
-          <tr><td><code>block_consecutive_rule</code></td><td>連續 N 點超限（WECO Rule 1 變形）</td></tr>
-          <tr><td><code>block_delta</code></td><td>計算相鄰兩點差值（diff）</td></tr>
+          <tr><td><code>block_step_check</code></td><td>聚合 → scalar → 比門檻 → <code>{pass: bool}</code>。Auto Patrol 必備。</td></tr>
+          <tr><td><code>block_threshold</code></td><td>每列標記是否超限</td></tr>
+          <tr><td><code>block_consecutive_rule</code></td><td>連續 N 點超限</td></tr>
+          <tr><td><code>block_delta</code></td><td>相鄰差值（diff）</td></tr>
           <tr><td><code>block_streak</code></td><td>連續同向趨勢計數</td></tr>
-          <tr><td><code>block_weco_rules</code></td><td>完整 WECO R1–R8 規則判斷，輸出每條規則的 violation flag</td></tr>
-          <tr><td><code>block_any_trigger</code></td><td>對多個 boolean 欄位做 OR，只要有一個為 true 就觸發</td></tr>
+          <tr><td><code>block_weco_rules</code></td><td>完整 WECO R1–R8 規則</td></tr>
+          <tr><td><code>block_any_trigger</code></td><td>多 boolean 欄 OR 觸發</td></tr>
         </tbody>
       </table>
 
-      <h4>Statistical — scipy + pandas（Pure Python，7 個）</h4>
+      <h4>Statistical（7 個）</h4>
       <table>
         <thead><tr><th>Block</th><th>功能</th></tr></thead>
         <tbody>
-          <tr><td><code>block_linear_regression</code></td><td>scipy linregress，輸出斜率/截距/R²</td></tr>
-          <tr><td><code>block_histogram</code></td><td>numpy histogram，輸出 bin 分佈 DataFrame</td></tr>
-          <tr><td><code>block_cpk</code></td><td>製程能力指數 Cp/Cpk 計算</td></tr>
-          <tr><td><code>block_correlation</code></td><td>pearson / spearman 相關係數矩陣</td></tr>
-          <tr><td><code>block_hypothesis_test</code></td><td>t-test / Mann-Whitney U 等假設檢定</td></tr>
-          <tr><td><code>block_ewma</code></td><td>指數加權移動平均（EWMA 管制圖用）</td></tr>
+          <tr><td><code>block_linear_regression</code></td><td>scipy linregress，斜率/截距/R²</td></tr>
+          <tr><td><code>block_histogram</code></td><td>numpy histogram，bin 分佈</td></tr>
+          <tr><td><code>block_cpk</code></td><td>製程能力指數 Cp/Cpk</td></tr>
+          <tr><td><code>block_correlation</code></td><td>pearson / spearman 矩陣</td></tr>
+          <tr><td><code>block_hypothesis_test</code></td><td>t-test / Mann-Whitney U</td></tr>
+          <tr><td><code>block_ewma</code></td><td>指數加權移動平均</td></tr>
           <tr><td><code>block_ewma_cusum</code></td><td>EWMA + CUSUM 複合偵測</td></tr>
         </tbody>
       </table>
 
-      <h4>Charts / Visualization — 輸出 ChartDSL（Pure Python，22 個）</h4>
+      <h4>Charts（22 個，輸出 ChartDSL）</h4>
       <table>
         <thead><tr><th>Block</th><th>圖表類型</th></tr></thead>
         <tbody>
-          <tr><td><code>block_line_chart</code></td><td>折線圖（SPC 值 vs 時間）</td></tr>
+          <tr><td><code>block_line_chart</code></td><td>折線圖</td></tr>
           <tr><td><code>block_bar_chart</code></td><td>長條圖</td></tr>
           <tr><td><code>block_scatter_chart</code></td><td>散點圖</td></tr>
-          <tr><td><code>block_box_plot</code></td><td>箱形圖（分佈比較）</td></tr>
-          <tr><td><code>block_splom</code></td><td>散點矩陣（Scatter Plot Matrix）</td></tr>
+          <tr><td><code>block_box_plot</code></td><td>箱形圖</td></tr>
+          <tr><td><code>block_splom</code></td><td>散點矩陣</td></tr>
           <tr><td><code>block_histogram_chart</code></td><td>直方圖（視覺版）</td></tr>
-          <tr><td><code>block_xbar_r</code></td><td>X-bar / R 管制圖（含 WECO zones）</td></tr>
-          <tr><td><code>block_imr</code></td><td>I-MR 個別值 / 移動極差管制圖</td></tr>
-          <tr><td><code>block_pareto</code></td><td>柏拉圖（80/20 分析）</td></tr>
-          <tr><td><code>block_variability_gauge</code></td><td>變異量表（gauge chart 類）</td></tr>
-          <tr><td><code>block_parallel_coords</code></td><td>平行座標圖（多維比較）</td></tr>
-          <tr><td><code>block_probability_plot</code></td><td>常態機率圖（Q-Q plot）</td></tr>
-          <tr><td><code>block_heatmap_dendro</code></td><td>熱力圖 + 樹狀圖（聚類分析）</td></tr>
+          <tr><td><code>block_xbar_r</code></td><td>X-bar/R SPC 管制圖（含 WECO zones）</td></tr>
+          <tr><td><code>block_imr</code></td><td>I-MR 管制圖</td></tr>
+          <tr><td><code>block_pareto</code></td><td>柏拉圖</td></tr>
+          <tr><td><code>block_variability_gauge</code></td><td>變異量表</td></tr>
+          <tr><td><code>block_parallel_coords</code></td><td>平行座標圖</td></tr>
+          <tr><td><code>block_probability_plot</code></td><td>常態機率圖 Q-Q plot</td></tr>
+          <tr><td><code>block_heatmap_dendro</code></td><td>熱力圖 + 樹狀圖</td></tr>
           <tr><td><code>block_wafer_heatmap</code></td><td>晶圓熱力圖（半導體專用）</td></tr>
           <tr><td><code>block_defect_stack</code></td><td>缺陷堆疊圖</td></tr>
           <tr><td><code>block_spatial_pareto</code></td><td>空間柏拉圖</td></tr>
           <tr><td><code>block_trend_wafer_maps</code></td><td>晶圓 Trend 地圖序列</td></tr>
-          <tr><td><code>block_spc_long_form</code></td><td>SPC 長格式圖（多 chart 疊放）</td></tr>
-          <tr><td><code>block_spc_panel</code></td><td>SPC 面板圖（Dashboard 式多格）</td></tr>
-          <tr><td><code>block_apc_long_form</code></td><td>APC 補償值趨勢長格式</td></tr>
+          <tr><td><code>block_spc_long_form</code></td><td>SPC 多 chart 疊放</td></tr>
+          <tr><td><code>block_spc_panel</code></td><td>SPC Dashboard 面板</td></tr>
+          <tr><td><code>block_apc_long_form</code></td><td>APC 補償值趨勢</td></tr>
           <tr><td><code>block_apc_panel</code></td><td>APC 面板圖</td></tr>
-          <tr><td><code>block_chart</code></td><td>通用 chart（動態決定類型）</td></tr>
+          <tr><td><code>block_chart</code></td><td>通用 chart（動態類型）</td></tr>
         </tbody>
       </table>
 
-      <h4>Utilities（Pure Python，4 個）</h4>
+      <h4>Utilities（4 個）</h4>
       <table>
         <thead><tr><th>Block</th><th>功能</th></tr></thead>
         <tbody>
-          <tr><td><code>block_count_rows</code></td><td>輸出 DataFrame 的列數（scalar）</td></tr>
-          <tr><td><code>block_compute</code></td><td>新增計算欄位（四則運算 / 邏輯表達式）</td></tr>
-          <tr><td><code>block_alert</code></td><td>直接產生 alert 訊息輸出（不依賴 step_check）</td></tr>
-          <tr><td><code>block_data_view</code></td><td>輸出 DataFrame 的表格視覺（debug / 展示用）</td></tr>
-        </tbody>
-      </table>
-
-      <h3>數字統計</h3>
-      <table>
-        <thead><tr><th>類別</th><th>數量</th><th>執行方式</th></tr></thead>
-        <tbody>
-          <tr><td>Source / Fan-out（呼叫 MCP）</td><td><strong>5 個</strong></td><td><span class="tag tag-orange">MCP-backed</span></td></tr>
-          <tr><td>Transform / Rules / Statistical / Utils / Charts</td><td><strong>43 個</strong></td><td><span class="tag tag-blue">Pure Python</span></td></tr>
-          <tr><td>Auto-generated MCP Proxy（V54 機制）</td><td><strong>N 個</strong>（動態，Admin 建立）</td><td><span class="tag tag-purple">MCP Proxy</span></td></tr>
-          <tr><td><strong>總 Builtin</strong></td><td><strong>48 個</strong></td><td>—</td></tr>
+          <tr><td><code>block_count_rows</code></td><td>輸出列數 scalar</td></tr>
+          <tr><td><code>block_compute</code></td><td>新增計算欄位</td></tr>
+          <tr><td><code>block_alert</code></td><td>直接產生 alert 輸出</td></tr>
+          <tr><td><code>block_data_view</code></td><td>輸出 DataFrame 表格（debug）</td></tr>
         </tbody>
       </table>
 
       <div class="callout">
-        <strong>關鍵結論：</strong>48 個 Builtin Block 中，<strong>43 個完全不碰 MCP</strong>，純 pandas/scipy/python 運算。只有 5 個 Source/Fan-out block 對外發 HTTP 請求（4 個是呼叫 MCP endpoint，1 個是通用 dispatcher）。DAG 的「智慧」在於這 5 個取資料的 block + 43 個純運算 block 組合出的分析邏輯。
+        <strong>一句話總結：</strong>48 個 Builtin block 中，<strong>43 個純 Python 不碰網路</strong>；<strong>1 個直連 simulator</strong>（process_history）；<strong>4 個走 mcp_definitions</strong>（需 DB 有資料）。對應 Q23 的「1–2 種 MCP」——99% 的 pipeline 工作只靠那 1 條直連路徑 + 43 個純運算 block 完成。
       </div>
     </div>
   </section>
@@ -2743,6 +2738,34 @@ if final_output.get("pass") is True:
 
   // Set first link active on load
   if (sections.length) setActive(sections[0].id);
+
+  // ── Mobile hamburger ──
+  const navToggle = document.getElementById('navToggle');
+  const navBackdrop = document.getElementById('navBackdrop');
+  const navEl2 = document.querySelector('nav');
+
+  function openNav() {
+    navEl2.classList.add('open');
+    navBackdrop.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeNav() {
+    navEl2.classList.remove('open');
+    navBackdrop.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  navToggle.addEventListener('click', () => {
+    navEl2.classList.contains('open') ? closeNav() : openNav();
+  });
+  navBackdrop.addEventListener('click', closeNav);
+
+  // Close nav when a link is tapped on mobile
+  document.querySelectorAll('nav a').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) closeNav();
+    });
+  });
 </script>
 </body>
 </html>
