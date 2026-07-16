@@ -542,6 +542,7 @@
   <a href="#q23"><span class="nav-num">23</span>Runtime MCP 完整清單與採用者</a>
   <a href="#q24"><span class="nav-num">24</span>Block 完整清單：48 個，code vs MCP</a>
   <a href="#q25"><span class="nav-num">25</span>完整 Pipeline 執行一路走到底</a>
+  <a href="#q26"><span class="nav-num">26</span>實際 MCP 設計全解：Client/Server/Tools/Sequence</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -2689,6 +2690,449 @@ if final_output.get("pass") is True:
       <div class="callout">
         <strong>設計哲學的體現：</strong>無論 pipeline 從哪裡來（AI 生成 / 用戶拖拉 / Skill 觸發），<strong>executor.py 的邏輯永遠一致</strong>。「誰建 pipeline」和「pipeline 怎麼跑」是完全解耦的兩件事。
       </div>
+    </div>
+  </section>
+
+  <!-- ── Q26 ── -->
+  <section class="qa-block" id="q26">
+    <div class="qa-label">
+      <span class="qa-index">Round 26</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>徹底展開實際有運作的 MCP：Client、Server、Tools、運作 Sequence、Use Case 範例</p>
+    </div>
+    <div class="answer">
+
+      <h2>先定位：這個系統有「兩種 MCP」，設計完全不同</h2>
+
+      <table>
+        <thead><tr><th></th><th>路徑 A：Pipeline 資料路徑</th><th>路徑 B：外部 Claude 操控路徑</th></tr></thead>
+        <tbody>
+          <tr><td><strong>用途</strong></td><td>Pipeline block 取製程資料用</td><td>Claude Desktop / claude.ai 操控整個平台</td></tr>
+          <tr><td><strong>Server</strong></td><td>ontology_simulator :8012（FastAPI）</td><td>mcp_pipeline_builder :8060（FastMCP）</td></tr>
+          <tr><td><strong>Client</strong></td><td>block_process_history / block_mcp_call</td><td>外部 Claude（MCP client protocol）</td></tr>
+          <tr><td><strong>協定</strong></td><td>普通 HTTP GET/POST</td><td>MCP over SSE（Model Context Protocol）</td></tr>
+          <tr><td><strong>誰決定呼叫</strong></td><td>Pipeline DAG executor（確定性）</td><td>外部 Claude LLM（語意推理選 tool）</td></tr>
+        </tbody>
+      </table>
+
+      <hr/>
+
+      <h2>路徑 A：Pipeline 資料路徑</h2>
+
+      <h3>A-1 Server：ontology_simulator</h3>
+      <p>檔案：<code>ontology_simulator/app/api/routes.py:501-593</code></p>
+
+      <pre><code># GET /api/v1/process/info
+async def get_process_info(
+    toolID: str | None = Query(None),     # 查哪台機台
+    lotID:  str | None = Query(None),     # 查哪個 lot
+    step:   str | None = Query(None),     # 查哪個站點
+    objectName: str | None = Query(None), # 只要 SPC|APC|DC|RECIPE|FDC|EC 哪個
+    since:  str = Query("24h"),           # 時間範圍 24h/7d/30d
+    limit:  int = Query(50, ge=1, le=500),
+    # snake_case alias（相容 block 端的慣例）
+    tool_id: str | None = Query(None),
+    lot_id:  str | None = Query(None),
+)</code></pre>
+
+      <p><strong>回傳格式：</strong></p>
+      <pre><code>{
+  "total": 42,
+  "events": [
+    {
+      "eventTime": "2026-07-16T09:00:00Z",
+      "toolID": "EQP-03",
+      "lotID":  "LOT-0042",
+      "step":   "STK_01",
+      "spc_status": "OOC",       // 整體 SPC 判斷
+      "SPC": {
+        "charts": {
+          "xbar": { "value": 3.82, "ucl": 3.5, "lcl": 2.5, "is_ooc": true },
+          "r":    { "value": 0.42, "ucl": 0.8, "lcl": 0.0, "is_ooc": false }
+        }
+      },
+      "APC": {
+        "objectID": "APC-009",
+        "parameters": { "rf_power_bias": 0.12, "model_pressure": 1.08 }
+      },
+      "DC":  { "chamberID": "CH-1", "parameters": { "sensor_01": 301.2 } },
+      "RECIPE": { "objectID": "RCP-001", "parameters": { "temperature": 300 } },
+      "FDC": { "classification": "WARNING" },
+      "EC":  { "constants": {
+        "rf_power_offset": { "value": 1.02, "setpoint": 1.0, "deviation_pct": 2.1, "status": "DRIFT" }
+      }}
+    }
+  ]
+}</code></pre>
+
+      <p><strong>資料來源：</strong>MongoDB，聯結 <code>events</code> 集合（製程事件）+ <code>object_snapshots</code> 集合（APC/DC/SPC 快照），以 <code>(lotID, step, eventTime)</code> 為 key。</p>
+
+      <h3>A-2 Client A：block_process_history（直連，不走 mcp_definitions）</h3>
+      <p>檔案：<code>python_ai_sidecar/pipeline_builder/blocks/process_history.py:288</code></p>
+
+      <pre><code>class ProcessHistoryBlockExecutor(BlockExecutor):
+    async def execute(self, *, params, inputs, context) -> dict:
+        # 參數驗證
+        tool_id = params.get("tool_id")     # 三擇一必填
+        lot_id  = params.get("lot_id")
+        step    = params.get("step")
+        nested  = params.get("nested", True)  # 預設保留 nested 格式
+        limit   = min(int(params.get("limit", 100)), 500)
+
+        # ① 直接拼 URL（不查 mcp_definitions）
+        url = f"{ONTOLOGY_SIM_URL}/api/v1/process/info"
+        query = {"since": params.get("time_range", "24h"), "limit": limit}
+        if tool_id: query["toolID"] = tool_id
+        if lot_id:  query["lotID"]  = lot_id
+        if step:    query["step"]   = step
+
+        # ② HTTP GET
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=query)
+
+        events = resp.json().get("events", [])
+
+        # ③ 格式轉換
+        if nested:
+            rows = [_nested_event(e) for e in events]
+            # spc_charts → list of {name, value, ucl, lcl, is_ooc, status}
+            # APC/DC/RECIPE/FDC/EC → 保留原 dict，用路徑語法存取
+        else:
+            rows = [_flatten_event(e, object_name) for e in events]
+            # 全部攤平成 spc_xbar_value, apc_rf_power_bias, dc_sensor_01...
+
+        return {"data": pd.DataFrame(rows)}</code></pre>
+
+      <h3>A-3 Client B：block_mcp_call（通用 dispatcher，走 mcp_definitions）</h3>
+      <p>檔案：<code>python_ai_sidecar/pipeline_builder/blocks/mcp_call.py:69-147</code></p>
+
+      <pre><code>class McpCallBlockExecutor(BlockExecutor):
+    async def execute(self, *, params, inputs, context) -> dict:
+        mcp_name = self.require(params, "mcp_name")  # 例如 "list_tools"
+        args_raw = params.get("args") or {}
+
+        # ① 向 Java 查 endpoint（每次呼叫都查一次）
+        java = _make_java_client()
+        mcp = await java.get_mcp_by_name(mcp_name)  # GET /internal/mcp-definitions
+        # → {"name":"list_tools","api_config":"{\"endpoint_url\":\"http://...\",\"method\":\"GET\"}"}
+
+        # ② 解析 api_config
+        api_config = json.loads(mcp["api_config"])
+        url    = api_config["endpoint_url"]
+        method = api_config.get("method", "GET").upper()
+        # method 白名單：只允許 GET / POST，否則拋 BlockExecutionError
+
+        # ③ 發送請求
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if method == "GET":
+                resp = await client.get(url, params=args_raw)
+            else:
+                resp = await client.post(url, json=args_raw)
+
+        # ④ 回傳扁平化（自動偵測 JSON 結構）
+        payload = resp.json()
+        records = _flatten_response(payload)
+        # 嘗試 key：events / dataset / items / data / records / rows
+        # 都找不到就把整個 dict 當一列
+
+        return {"data": pd.DataFrame(records)}</code></pre>
+
+      <h3>A-4 Sequence：block_process_history（高頻路徑）</h3>
+      <div class="arch-box">
+Pipeline executor
+  │  node n1 → block_process_history.execute(params={tool_id:"EQP-03", limit:20})
+  │
+  ▼
+<span class="hl">process_history.py</span>
+  │  url = f"{ONTOLOGY_SIM_URL}/api/v1/process/info"
+  │  GET params = {toolID:"EQP-03", since:"24h", limit:20}
+  │
+  ▼  HTTP GET（直連，無中間層）
+<span class="hl2">ontology_simulator :8012</span>
+  │  routes.py:501 → 查 MongoDB events + object_snapshots
+  │  回傳 {total:20, events:[{eventTime, toolID, spc_status, SPC:{...}, APC:{...}, ...}]}
+  │
+  ▼  HTTP 200
+<span class="hl">process_history.py</span>
+  │  _nested_event() → spc_charts=[{name:"xbar",value:3.82,...}], APC={...}
+  │  pd.DataFrame(rows) → 20 rows × cols
+  │
+  ▼
+Pipeline executor
+  │  outputs["n1"] = {"data": df}  → 傳給下一個 node
+      </div>
+
+      <h3>A-5 Sequence：block_mcp_call（低頻路徑，需 mcp_definitions 有資料）</h3>
+      <div class="arch-box">
+Pipeline executor
+  │  node n1 → block_list_objects.execute(params={kind:"tool"})
+  │             → 委派給 McpCallBlockExecutor(mcp_name="list_tools")
+  │
+  ▼
+<span class="hl">mcp_call.py</span>
+  │  GET {JAVA}/internal/mcp-definitions (filter by name="list_tools")
+  │
+  ▼  HTTP GET
+<span class="hl2">Java backend :8002</span>
+  │  查 PostgreSQL mcp_definitions 表
+  │  回傳 {api_config: '{"endpoint_url":"http://localhost:8012/api/v1/tools","method":"GET"}'}
+  │
+  ▼  HTTP 200
+<span class="hl">mcp_call.py</span>
+  │  url = "http://localhost:8012/api/v1/tools"
+  │  GET (no params)
+  │
+  ▼  HTTP GET
+<span class="hl2">ontology_simulator :8012</span>
+  │  回傳 {"tools":[{"toolID":"EQP-01","status":"Busy"},...]}
+  │
+  ▼  HTTP 200
+<span class="hl">mcp_call.py</span>
+  │  _flatten_response() → 偵測到 "tools" key → 取 list
+  │  pd.DataFrame([{toolID:"EQP-01",...},...])
+  │
+  ▼
+Pipeline executor → outputs["n1"] = {"data": df}
+      </div>
+
+      <hr/>
+
+      <h2>路徑 B：外部 MCP Server（mcp_pipeline_builder）</h2>
+
+      <h3>B-1 Server 設計：GatedFastMCP</h3>
+      <p>檔案：<code>mcp_pipeline_builder/server.py:136-150</code></p>
+
+      <pre><code>class GatedFastMCP(FastMCP):
+    """暴露控制閘門：從 Java 動態讀取 private 工具清單，
+    把 admin 標記為 private 的工具從 list_tools 隱藏，
+    呼叫時也拒絕。"""
+
+    async def list_tools(self):
+        tools = await super().list_tools()
+        private = await _private_keys()     # 30 秒 TTL 快取
+        return [t for t in tools if t.name not in private]
+
+    async def call_tool(self, name, arguments):
+        if name in await _private_keys():
+            raise ValueError(f"tool '{name}' is not exposed")
+        return await super().call_tool(name, arguments)
+
+# Fail-open：Java 掛掉時暴露所有工具（不阻斷服務）
+async def _private_keys() -> set[str]:
+    try:
+        r = await httpx.get(f"{JAVA}/api/v1/mcp-capabilities")
+        return {c["name"] for c in r.json() if not c.get("is_public", True)}
+    except Exception:
+        return set()  # ← fail-open</code></pre>
+
+      <h3>B-2 Tools 清單（@mcp.tool 定義）</h3>
+
+      <h4>探索類</h4>
+      <table>
+        <thead><tr><th>Tool</th><th>簽名</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>list_blocks</code></td><td><code>(category: str | None)</code></td><td>列出所有 block（可按 source/transform/logic/output/check 過濾）</td></tr>
+          <tr><td><code>explain_block</code></td><td><code>(name: str)</code></td><td>取得一個 block 的完整定義：description、param_schema、examples、port</td></tr>
+        </tbody>
+      </table>
+
+      <h4>建構與執行類</h4>
+      <table>
+        <thead><tr><th>Tool</th><th>簽名</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>validate</code></td><td><code>(pipeline_json: dict)</code></td><td>結構驗證（拓撲排序、block 存在、port 相容性）不跑真實資料</td></tr>
+          <tr><td><code>preview</code></td><td><code>(pipeline_json, node_id)</code></td><td>執行到指定 node，回傳資料形狀（欄位 capped ~30、sample 3 列）</td></tr>
+          <tr><td><code>execute</code></td><td><code>(pipeline_json: dict)</code></td><td>完整執行 pipeline，回傳所有 node 結果 + chart 清單</td></tr>
+        </tbody>
+      </table>
+
+      <h4>持久化類</h4>
+      <table>
+        <thead><tr><th>Tool</th><th>簽名</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>save_pipeline</code></td><td><code>(name, pipeline_json, description)</code></td><td>建立 DRAFT Skill，回傳 {skill_slug, view_url}。狀態是 draft，不會自動啟用。</td></tr>
+          <tr><td><code>create_skill_with_pipeline</code></td><td><code>(name, pipeline_json, sub, nl)</code></td><td>原子操作：save + bind 一次完成。<strong>推薦</strong>取代分開呼叫。</td></tr>
+        </tbody>
+      </table>
+
+      <h4>危險操作類（全部走 Handoff，不直接執行）</h4>
+      <table>
+        <thead><tr><th>Tool</th><th>Handoff 種類</th><th>人工確認後做什麼</th></tr></thead>
+        <tbody>
+          <tr><td><code>activate_skill</code></td><td><code>confirm_skill_activate</code></td><td>draft → active（開始自動運作）</td></tr>
+          <tr><td><code>automate_skill_patrol</code></td><td><code>confirm_skill_automate</code></td><td>設定排程 + alarm gate</td></tr>
+          <tr><td><code>automate_skill_event</code></td><td><code>confirm_skill_automate</code></td><td>設定事件觸發</td></tr>
+          <tr><td><code>automate_skill_datacheck</code></td><td><code>confirm_skill_automate</code></td><td>設定定期報告（不發 alarm）</td></tr>
+          <tr><td><code>delete_skill_v2</code></td><td><code>confirm_skill_delete</code></td><td>永久刪除</td></tr>
+        </tbody>
+      </table>
+
+      <h4>呈現層 Patch（只改樣式，不改資料）</h4>
+      <table>
+        <thead><tr><th>Tool</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>patch_chart_style</code></td><td>修改 chart node 的 title/style/tooltip，資料欄位（x, y, ucl_column）在白名單外，改資料要重建 pipeline</td></tr>
+        </tbody>
+      </table>
+
+      <h3>B-3 Handoff 機制設計</h3>
+      <p>檔案：<code>mcp_pipeline_builder/server.py:377-399</code></p>
+
+      <pre><code># 危險操作不直接執行，建立 handoff 紀錄讓人工確認
+async def _handoff(kind, target_ref, action, payload, *, tell_user) -> dict:
+    # 1. 在 Java 建立 handoff 紀錄
+    r = await httpx.post(f"{JAVA}/internal/handoffs", json={
+        "kind": kind,
+        "target_ref": target_ref,
+        "action": action,
+        "payload": json.dumps(payload),
+        "requested_by": "cowork",   # 標記是外部 Claude 發起的
+    })
+    hid = r.json()["id"]
+
+    # 2. 回傳給外部 Claude
+    return {
+        "status": "PENDING_USER_CONFIRMATION",
+        "executed": False,           # ← 重要：告知 LLM 沒有直接執行
+        "launch_url": f"{PUBLIC}/handoff/{hid}",  # 人工要點這個確認
+        "tell_user": tell_user,      # 外部 Claude 要向用戶說的話
+    }
+    # 用戶點 launch_url → 在 GUI 看到確認卡 → 確認後 Java HandoffService 執行真正動作</code></pre>
+
+      <h3>B-4 Sequence：外部 Claude 建構並啟用一個 Patrol Skill</h3>
+      <div class="arch-box">
+<span class="hl">外部 Claude（claude.ai cowork）</span>
+  │  用戶說：「幫我建一個每小時掃 OOC 的巡檢」
+  │
+  ▼  MCP protocol（SSE over HTTPS）
+<span class="hl2">nginx :443</span>（TLS + secret path）
+  │
+  ▼
+<span class="hl">GatedFastMCP :8060</span>
+  │  list_tools() → 過濾 private → 回傳可用 tool 清單
+  │
+  ▼  外部 Claude 選 tool
+外部 Claude call: <span class="hl3">list_blocks(category="source")</span>
+  │  → GET {JAVA}/internal/blocks → 回傳 block 清單
+  │
+外部 Claude call: <span class="hl3">explain_block("block_step_check")</span>
+  │  → GET {JAVA}/internal/blocks → 回傳 param_schema + examples
+  │
+外部 Claude call: <span class="hl3">validate(pipeline_json={...})</span>
+  │  → POST {SIDECAR}/internal/pipeline/validate → {ok:true}
+  │
+外部 Claude call: <span class="hl3">create_skill_with_pipeline(name="OOC巡檢", pipeline_json={...})</span>
+  │  → POST {JAVA}/api/v2/skills/with-pipeline
+  │  → Java 原子寫入 pb_pipelines + pb_published_skills（status=draft）
+  │  → 回傳 {skill_id:42, view_url:"/skills/42", status:"draft"}
+  │
+外部 Claude call: <span class="hl3">automate_skill_patrol(slug="ooc-patrol", schedule="每 1 小時")</span>
+  │  → _handoff("confirm_skill_automate", ...)
+  │  → POST {JAVA}/internal/handoffs → {id:"hid-9f3a"}
+  │  → 回傳 {executed:false, launch_url:"https://aiops.com/handoff/hid-9f3a"}
+  │
+  ▼  外部 Claude 告知用戶
+「Skill 已建立為草稿，請點此連結確認啟用自動化」
+  │
+  ▼  用戶點 launch_url → GUI 確認卡
+<span class="hl">Java HandoffService</span>
+  │  resolve → 設定 trigger_config + alarm_gate → status=active
+  │
+  ▼
+Skill 啟用，每小時自動執行
+      </div>
+
+      <hr/>
+
+      <h2>Use Case 範例解釋</h2>
+
+      <h3>Use Case 1：Chat Agent 直接問 SPC 狀況（繞過 Pipeline）</h3>
+      <p>工程師說：「EQP-03 現在 SPC 怎樣？」</p>
+
+      <div class="arch-box">
+<span class="hl">Chat Agent（Coordinator）</span>
+  │  context_loader 初始化：載入 mcp_definitions → 注入 &lt;mcp_catalog&gt; 到 system prompt
+  │  Claude LLM 判斷：需要查資料 → 選 execute_mcp tool
+  │
+  ▼  tool_dispatcher.py
+execute_mcp(mcp_name="get_process_info", params={toolID:"EQP-03", since:"24h", limit:5})
+  │  _resolve_mcp_id("get_process_info") → GET {JAVA}/internal/mcp-definitions → mcp_id=7
+  │  POST {SIDECAR}/api/v1/execute/mcp/7  body={toolID:"EQP-03", since:"24h", limit:5}
+  │
+  ▼  Sidecar 轉發
+  │  GET {ONTOLOGY_SIM_URL}/api/v1/process/info?toolID=EQP-03&since=24h&limit=5
+  │
+  ▼  回傳 raw JSON（5 筆 events）
+<span class="hl">Claude LLM</span>
+  │  讀取 JSON → 推理 → 「EQP-03 最近 5 筆有 3 筆 OOC，xbar 值 3.82 超出 UCL 3.5」
+  │  回傳自然語言摘要 → SSE stream 到前端
+      </div>
+
+      <h3>Use Case 2：Pipeline 執行（block_process_history 直連路徑）</h3>
+      <p>已存的 Skill「OOC 趨勢折線圖」被手動觸發，含 4 個 block：</p>
+      <pre><code>n1: block_process_history(tool_id="EQP-03", limit=50, nested=True)
+    → GET simulator/api/v1/process/info → 50 rows DataFrame
+    → spc_charts=[{name:"xbar", value:3.82, ucl:3.5, is_ooc:true}, ...]
+
+n2: block_unnest(column="spc_charts", keep_parent=True)
+    → df.explode("spc_charts") → 每筆 event × N charts 展開成獨立列
+    → 50 rows × 2 charts = 100 rows
+
+n3: block_filter(column="spc_charts.name", operator="=", value="xbar")
+    → 只留 xbar chart，50 rows
+
+n4: block_line_chart(x="eventTime", y=["spc_charts.value"],
+                     ucl_column="spc_charts.ucl", lcl_column="spc_charts.lcl")
+    → 讀第一列的 ucl/lcl → 加入 rules=[{value:3.5, label:"UCL"}, ...]
+    → 輸出 ChartDSL {type:"line", data:[...], rules:[...], spc_zones:true}</code></pre>
+
+      <h3>Use Case 3：外部 Claude 建 Custom MCP 並衍生 Block</h3>
+      <p>Admin 想讓 Claude 用一個廠內系統的 API：</p>
+      <pre><code>// 外部 Claude 呼叫 draft_mcp
+draft_mcp(
+  name="get_defect_map",
+  description="查晶圓缺陷分佈，回傳每個 die 的 defect_count 和座標",
+  endpoint_url="http://defect-system.internal/api/wafer-map",
+  method="GET",
+  input_schema=[{name:"wafer_id", type:"string", required:true}]
+)
+// → Java 寫入 mcp_definitions（status=draft）
+// → LLM 草稿 description + param_schema（claude-haiku，省成本）
+
+// Admin 在 GUI 確認、修改 description 後勾選「連動產生 Block」
+// → Java 原子寫入：
+//   mcp_definitions.produces_block = true
+//   pb_blocks: {name:"block_get_defect_map", implementation:{type:"mcp_proxy", mcp_name:"get_defect_map"}}
+//   pb_pipelines: 單 block DAG
+//   pb_published_skills: source="mcp_auto"
+
+// Pipeline Builder 現在可以拖拉 block_get_defect_map
+// → McpProxyBlockExecutor.execute() 查 mcp_definitions 取 endpoint → httpx GET → DataFrame</code></pre>
+
+      <hr/>
+
+      <h2>完整設計總覽</h2>
+
+      <table>
+        <thead><tr><th>面向</th><th>路徑 A（Pipeline 資料）</th><th>路徑 B（外部操控）</th></tr></thead>
+        <tbody>
+          <tr><td>Server</td><td>ontology_simulator（FastAPI + MongoDB）</td><td>GatedFastMCP（FastMCP + SSE）</td></tr>
+          <tr><td>Client</td><td>block executor 內部 httpx</td><td>外部 Claude MCP client</td></tr>
+          <tr><td>Auth</td><td>無（內部網路）</td><td>nginx bearer token + secret path</td></tr>
+          <tr><td>Tools 數量</td><td>隱性（只有 /api/v1/process/info 等 HTTP endpoints）</td><td>30+ 個 @mcp.tool 定義</td></tr>
+          <tr><td>危險操作保護</td><td>method 白名單（GET/POST only）</td><td>Handoff 機制（人工 GUI 確認）</td></tr>
+          <tr><td>資料流向</td><td>Simulator → DataFrame → 下游 block</td><td>外部 Claude → Java/Sidecar → GUI</td></tr>
+          <tr><td>誰選擇呼叫</td><td>DAG executor（確定性）</td><td>外部 Claude LLM（語意推理）</td></tr>
+          <tr><td>結果</td><td>pandas DataFrame 在 pipeline 中流動</td><td>JSON + launch_url 回給外部 Claude</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>設計哲學：</strong>路徑 A 是「確定性機器」——DAG executor 按拓撲順序逐 block 執行，block 選好了就一定跑那條路，不靠 LLM 決定。路徑 B 是「語意入口」——外部 Claude 用自然語言理解意圖、選工具、組合步驟，但所有寫入/危險操作一律踢給人工確認。兩條路徑職責清晰、互不干擾。
+      </div>
+
     </div>
   </section>
 
