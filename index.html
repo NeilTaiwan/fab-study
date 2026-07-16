@@ -1,0 +1,2749 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ai-ops-agentic-platform — 專案問答紀錄</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --bg2: #181c24;
+      --bg3: #1e2330;
+      --border: #2a3045;
+      --accent: #4f8ef7;
+      --accent2: #7c5cfc;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --q-bg: #1a2035;
+      --a-bg: #111827;
+      --code-bg: #0d1117;
+      --tag-green: #10b981;
+      --tag-blue: #3b82f6;
+      --tag-purple: #8b5cf6;
+      --tag-orange: #f59e0b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ── */
+    nav {
+      width: 260px;
+      min-width: 260px;
+      background: var(--bg2);
+      border-right: 1px solid var(--border);
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      overflow-y: auto;
+      padding: 24px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .nav-header {
+      padding: 0 20px 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .nav-header .repo {
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .nav-header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .nav-date {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 4px;
+    }
+
+    nav a {
+      display: block;
+      padding: 9px 20px;
+      color: var(--text2);
+      text-decoration: none;
+      font-size: 13px;
+      border-left: 2px solid transparent;
+      transition: all .15s;
+      line-height: 1.4;
+    }
+
+    nav a:hover {
+      background: var(--bg3);
+      color: var(--text);
+      border-left-color: var(--accent);
+    }
+
+    nav a.active {
+      background: var(--bg3);
+      color: var(--accent);
+      border-left-color: var(--accent);
+    }
+
+    .nav-num {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      background: var(--bg3);
+      border-radius: 4px;
+      text-align: center;
+      line-height: 20px;
+      font-size: 11px;
+      color: var(--text3);
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    nav a:hover .nav-num, nav a.active .nav-num {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      max-width: 860px;
+      padding: 48px 48px 80px;
+      overflow-x: hidden;
+    }
+
+    .page-header {
+      margin-bottom: 48px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .page-header .eyebrow {
+      font-size: 12px;
+      color: var(--accent);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .page-header h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    .page-header p {
+      color: var(--text2);
+      font-size: 14px;
+    }
+
+    /* ── Q&A Block ── */
+    .qa-block {
+      margin-bottom: 56px;
+      scroll-margin-top: 24px;
+    }
+
+    .qa-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .qa-index {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text3);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .qa-divider {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Question */
+    .question {
+      background: var(--q-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .question::before {
+      content: 'Q';
+      position: absolute;
+      left: -11px;
+      top: 16px;
+      width: 22px;
+      height: 22px;
+      background: var(--accent2);
+      border-radius: 50%;
+      text-align: center;
+      line-height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .question p {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    /* Answer */
+    .answer {
+      background: var(--a-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 28px;
+      position: relative;
+    }
+
+    .answer::before {
+      content: 'A';
+      position: absolute;
+      left: -11px;
+      top: 16px;
+      width: 22px;
+      height: 22px;
+      background: var(--accent);
+      border-radius: 50%;
+      text-align: center;
+      line-height: 22px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* ── Typography inside answer ── */
+    .answer h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 24px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .answer h2:first-child { margin-top: 0; }
+
+    .answer h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 18px 0 8px;
+    }
+
+    .answer h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text2);
+      margin: 14px 0 6px;
+    }
+
+    .answer p {
+      color: var(--text2);
+      margin-bottom: 10px;
+      font-size: 14.5px;
+    }
+
+    .answer strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .answer ul, .answer ol {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    .answer li {
+      color: var(--text2);
+      font-size: 14.5px;
+      margin-bottom: 4px;
+    }
+
+    .answer li strong { color: var(--text); }
+
+    /* Tables */
+    .answer table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13.5px;
+    }
+
+    .answer th {
+      background: var(--bg3);
+      color: var(--text);
+      font-weight: 600;
+      padding: 9px 14px;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+
+    .answer td {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      color: var(--text2);
+      vertical-align: top;
+    }
+
+    .answer tr:nth-child(even) td { background: var(--bg2); }
+
+    /* Code */
+    .answer code {
+      background: var(--code-bg);
+      color: #7dd3fc;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 13px;
+      border: 1px solid var(--border);
+    }
+
+    .answer pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+
+    .answer pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e2e8f0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Tags / badges */
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em;
+    }
+
+    .tag-green { background: rgba(16,185,129,.15); color: var(--tag-green); }
+    .tag-blue  { background: rgba(59,130,246,.15); color: var(--tag-blue); }
+    .tag-purple{ background: rgba(139,92,246,.15); color: var(--tag-purple); }
+    .tag-orange{ background: rgba(245,158,11,.15); color: var(--tag-orange); }
+
+    /* Feature card */
+    .feature-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 12px 0;
+      background: var(--bg2);
+    }
+
+    .feature-card h4 {
+      color: var(--accent);
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .feature-card p {
+      margin: 0;
+      font-size: 13.5px;
+    }
+
+    /* Architecture diagram */
+    .arch-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      color: #94a3b8;
+      margin: 12px 0;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    .arch-box .hl { color: #7dd3fc; }
+    .arch-box .hl2 { color: #a78bfa; }
+    .arch-box .hl3 { color: #34d399; }
+
+    /* Callout */
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--bg3);
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin: 14px 0;
+      font-size: 14px;
+      color: var(--text2);
+    }
+
+    .callout.warn {
+      border-color: var(--tag-orange);
+    }
+
+    .callout strong { color: var(--text); }
+
+    /* Separator */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+
+    /* Scroll */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg2); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @media (max-width: 768px) {
+      nav { display: none; }
+      main { padding: 24px 20px 60px; }
+    }
+
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<nav>
+  <div class="nav-header">
+    <div class="repo">GitHub Repo</div>
+    <h1>ai-ops-agentic-platform</h1>
+    <div class="nav-date">問答紀錄 · 2026-07-15</div>
+  </div>
+  <a href="#q1"><span class="nav-num">1</span>專案概覽</a>
+  <a href="#q2"><span class="nav-num">2</span>主要功能 Top 5</a>
+  <a href="#q3"><span class="nav-num">3</span>Skills / AI Agent / MCP 設計</a>
+  <a href="#q4"><span class="nav-num">4</span>接了多少 MCP Server</a>
+  <a href="#q5"><span class="nav-num">5</span>本地模型還是 API</a>
+  <a href="#q6"><span class="nav-num">6</span>誰決定呼叫哪個 MCP</a>
+  <a href="#q7"><span class="nav-num">7</span>4 個技術評估問題</a>
+  <a href="#q8"><span class="nav-num">8</span>GenAI / RAG / Copilot 評估</a>
+  <a href="#q9"><span class="nav-num">9</span>Conventional ML/DL 是什麼</a>
+  <a href="#q10"><span class="nav-num">10</span>RAG 是否屬於輕量？</a>
+  <a href="#q11"><span class="nav-num">11</span>為什麼需要向量搜尋</a>
+  <a href="#q12"><span class="nav-num">12</span>Pipeline / Block / DAG 結構</a>
+  <a href="#q13"><span class="nav-num">13</span>Block 類型與特殊規則</a>
+  <a href="#q14"><span class="nav-num">14</span>Skills 系統 vs Claude Skills</a>
+  <a href="#q15"><span class="nav-num">15</span>引用了哪些第三方 Library</a>
+  <a href="#q16"><span class="nav-num">16</span>Block 執行邏輯怎麼決定</a>
+  <a href="#q17"><span class="nav-num">17</span>專案有哪些設計文件</a>
+  <a href="#q18"><span class="nav-num">18</span>Pipeline 原始資料結構與 Chat 如何建構</a>
+  <a href="#q19"><span class="nav-num">19</span>MCP 大部分被誰採用</a>
+  <a href="#q20"><span class="nav-num">20</span>12 個 MCP 各被哪裡使用（統計）</a>
+  <a href="#q21"><span class="nav-num">21</span>SQL Runtime 安全控管 / Sandbox 設計</a>
+  <a href="#q22"><span class="nav-num">22</span>MCP 內部破壞性 SQL 的安全邊界</a>
+  <a href="#q23"><span class="nav-num">23</span>Runtime MCP 完整清單與採用者</a>
+  <a href="#q24"><span class="nav-num">24</span>Block 完整清單：48 個，code vs MCP</a>
+  <a href="#q25"><span class="nav-num">25</span>完整 Pipeline 執行一路走到底</a>
+</nav>
+
+<!-- ── Main ── -->
+<main>
+  <div class="page-header">
+    <div class="eyebrow">gillggx / ai-ops-agentic-platform</div>
+    <h2>專案深度問答紀錄</h2>
+    <p>完整的 22 輪技術問答，涵蓋架構、設計決策、Block 執行原理、Skills 設計、模型選型、MCP 整合統計、安全邊界分析與設計文件概覽。</p>
+  </div>
+
+  <!-- ── Q1 ── -->
+  <section class="qa-block" id="q1">
+    <div class="qa-label">
+      <span class="qa-index">Round 01</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>能否讀取並理解這個專案？<code>https://github.com/gillggx/ai-ops-agentic-platform</code></p>
+    </div>
+    <div class="answer">
+      <h2>專案架構總覽：ai-ops-agentic-platform</h2>
+      <p>這是一個 <strong>AI-Ops 多代理平台</strong>，專為半導體/製造業設計，結合多個微服務：</p>
+
+      <table>
+        <thead><tr><th>服務</th><th>技術</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>aiops-app/</code></td><td>Next.js 15 (App Router)</td><td>前端主應用，支援 i18n（英/日/繁中/簡中）</td></tr>
+          <tr><td><code>java-backend/</code></td><td>Spring Boot</td><td>後端 REST API，唯一 DB 擁有者</td></tr>
+          <tr><td><code>java-scheduler/</code></td><td>Java</td><td>排程服務</td></tr>
+          <tr><td><code>python_ai_sidecar/</code></td><td>Python + LangGraph</td><td>AI 代理引擎，Pipeline 建構器與協調器</td></tr>
+          <tr><td><code>mcp_pipeline_builder/</code></td><td>Python FastMCP</td><td>對外 MCP Server</td></tr>
+          <tr><td><code>ontology_simulator/</code></td><td>MongoDB + NATS</td><td>製程數據模擬器</td></tr>
+          <tr><td><code>deploy/</code></td><td>Docker / K8s</td><td>部署設定</td></tr>
+          <tr><td><code>.claude/</code></td><td>Claude CLI</td><td>內建 Claude 指令與 skills</td></tr>
+        </tbody>
+      </table>
+
+      <h3>前端主要功能模組</h3>
+      <ul>
+        <li>Pipeline Builder（視覺化流程建構）</li>
+        <li>Copilot（AI 助手對話）</li>
+        <li>Alarms（告警管理）</li>
+        <li>Admin Dashboard（後台管理）</li>
+      </ul>
+
+      <h3>AI 核心</h3>
+      <p>使用 <strong>LangGraph</strong> 建構 AI agent pipeline，Python sidecar 負責 AI 協調與推論，下載共 <strong>1,765 個檔案</strong>。</p>
+    </div>
+  </section>
+
+  <!-- ── Q2 ── -->
+  <section class="qa-block" id="q2">
+    <div class="qa-label">
+      <span class="qa-index">Round 02</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>告訴我最主要的前幾個功能？</p>
+    </div>
+    <div class="answer">
+      <h2>Top 5 核心功能</h2>
+
+      <div class="feature-card">
+        <h4>1 · AI Copilot 對話助手</h4>
+        <p>自然語言對話介面，工程師可以直接用對話方式完成複雜的製程分析。背後是 <strong>LangGraph 6 階段 orchestrator</strong>，會自動選擇工具（查詢、建圖、分析等），支援 SSE 串流即時回應，並有 6 個月的記憶向量搜尋（pgvector）。</p>
+      </div>
+
+      <div class="feature-card">
+        <h4>2 · 設備監控儀表板 + 根因分析</h4>
+        <p>全廠（Fab）和單機設備的即時監控，支援兩種模式：</p>
+        <ul>
+          <li><strong>Fab Briefing</strong>：OOC 熱力圖 + AI 自動摘要</li>
+          <li><strong>Tool Deep Dive</strong>：下鑽到 SPC / APC / FDC / EC 等 6 個分析標籤</li>
+        </ul>
+        <p>5 分鐘自動刷新，顏色標示設備狀態（Busy/Idle/Down 等）。</p>
+      </div>
+
+      <div class="feature-card">
+        <h4>3 · 自動巡檢 + 智能告警中心</h4>
+        <p>排程或事件觸發的自動巡檢，條件符合時自動生成告警。提供完整漏斗視覺化（事件 → 技能執行 → 告警），並追蹤每個告警被跳過的原因（重複、測試、未通過等）。</p>
+      </div>
+
+      <div class="feature-card">
+        <h4>4 · Pipeline Builder + Skill 管理</h4>
+        <p>拖拉式視覺化流程建構，透過組合「Block」（原子操作單位）來建立複雜分析流程。內建 <strong>Planner / Builder / Repair 三個 AI Agent</strong> 協助自動生成 pipeline，支援乾跑（Dry-run）驗證。</p>
+      </div>
+
+      <div class="feature-card">
+        <h4>5 · Agent 可觀測性 + 記憶系統</h4>
+        <p>完整的 AI 決策軌跡視覺化，可查看每個 Agent 的思考過程、記憶引用、LLM Token 消耗。記憶系統分 6 大類（領域知識、偏好、修正記錄等），持續學習累積。</p>
+      </div>
+
+      <div class="callout">
+        <strong>一句話總結：</strong>這是一個專為半導體/製造業設計的 AI 智能運維平台，讓工程師用對話操控自動化分析流程，並對 AI 決策過程完全透明可查。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q3 ── -->
+  <section class="qa-block" id="q3">
+    <div class="qa-label">
+      <span class="qa-index">Round 03</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>解釋一下他的 Skills、AI Agent 對話操作、MCP 設計</p>
+    </div>
+    <div class="answer">
+
+      <h2>Skills 系統</h2>
+      <p><strong>Skill = 1 個 Pipeline + 可選的自動化包裝器</strong></p>
+
+      <h3>三種角色</h3>
+      <table>
+        <thead><tr><th>角色</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag tag-blue">tool</span></td><td>一次性分析工具，手動觸發</td></tr>
+          <tr><td><span class="tag tag-orange">patrol</span></td><td>排程自動巡檢（每 30 分鐘 / 每小時...），條件符合時發告警</td></tr>
+          <tr><td><span class="tag tag-green">datacheck</span></td><td>排程產報告/看板，永不發告警</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Pipeline 由 Block 組成（DAG 結構）</h3>
+      <pre><code>source → transform → logic → output
+block_process_history → block_filter → block_step_check → block_line_chart</code></pre>
+
+      <table>
+        <thead><tr><th>類型</th><th>Block 範例</th></tr></thead>
+        <tbody>
+          <tr><td>source</td><td><code>block_process_history</code>、<code>block_list_objects</code></td></tr>
+          <tr><td>transform</td><td><code>block_filter</code>、<code>block_groupby_agg</code>、<code>block_mcp_foreach</code></td></tr>
+          <tr><td>logic</td><td><code>block_step_check</code>（與門檻比對 → 輸出 pass:bool，Auto Patrol 必備）</td></tr>
+          <tr><td>output</td><td><code>block_line_chart</code>、<code>block_bar_chart</code>、<code>block_heatmap</code>...</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Skill 生命週期</h3>
+      <pre><code>建立(draft) → 綁 pipeline → 啟用(active) → 可選: 加自動化包裝</code></pre>
+
+      <div class="callout warn">
+        <strong>關鍵設計：</strong>危險操作（刪除、啟用、設自動化）都不從 MCP 直接執行，而是返回 <code>launch_url</code> 讓人在 GUI 確認。
+      </div>
+
+      <hr/>
+
+      <h2>AI Agent 對話操作</h2>
+
+      <h3>舊架構 vs 新設計</h3>
+      <table>
+        <thead><tr><th></th><th>舊</th><th>新</th></tr></thead>
+        <tbody>
+          <tr><td>入口</td><td>強制分類器（4 bucket）→ 派工</td><td>自然對話 LLM loop</td></tr>
+          <tr><td>工具選擇</td><td>前置 intent 分類決定</td><td>Agent 自己判斷要不要呼叫工具</td></tr>
+          <tr><td>閒聊</td><td>無法處理</td><td>直接回覆，不呼叫工具</td></tr>
+        </tbody>
+      </table>
+
+      <h3>新 Loop 架構</h3>
+      <div class="arch-box">
+<span class="hl">用戶說話</span>
+   ↓
+<span class="hl">Chat Agent（Anthropic tool-use loop）</span>
+   ↓
+<span class="hl2">判斷：需要動作嗎？</span>
+  ├─ 不需要 → 直接自然回話
+  └─ 需要 → 選 MCP 工具呼叫
+        ├─ <span class="hl3">build_pipeline</span>（觸發 Planner+Builder）
+        ├─ <span class="hl3">modify_current_chart</span>
+        ├─ <span class="hl3">search_skills / invoke_skill</span>
+        ├─ <span class="hl3">get_current_status</span>
+        └─ <span class="hl3">search_knowledge</span>（RAG）
+      </div>
+
+      <h3>分兩步上線</h3>
+      <ul>
+        <li><strong>Step 1</strong>：先接唯讀工具（查詢、搜尋 skill、跑現成 skill）→ 驗證對話品質</li>
+        <li><strong>Step 2</strong>：再接 <code>build_pipeline</code>（包住 Planner &amp; Builder）+ 修圖 + 設自動化</li>
+      </ul>
+
+      <hr/>
+
+      <h2>MCP 設計（mcp_pipeline_builder/server.py）</h2>
+
+      <h3>角色定位</h3>
+      <p>MCP Server 跑在 EC2（<code>:8060</code>），讓<strong>外部 Claude（claude.ai / Claude Desktop）</strong>也能操作平台，就像 cowork 的外部入口。</p>
+
+      <h3>架構</h3>
+      <div class="arch-box">
+<span class="hl">外部 Claude (MCP Client)</span>
+       ↓ HTTP + bearer token
+  <span class="hl2">nginx (TLS + secret path)</span>
+       ↓
+  <span class="hl">MCP Server (:8060, Python FastMCP)</span>
+       ↓           ↓
+<span class="hl3">Java :8002</span>     <span class="hl3">Sidecar :8050</span>
+(Skills/DB)    (Pipeline執行/AI)
+      </div>
+
+      <h3>工具分類（共 ~30 個工具）</h3>
+      <table>
+        <thead><tr><th>類別</th><th>工具</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>探索</td><td><code>list_blocks</code>, <code>explain_block</code></td><td>發現可用 Block</td></tr>
+          <tr><td>建構</td><td><code>preview</code>, <code>validate</code>, <code>execute</code></td><td>組 pipeline 並測試</td></tr>
+          <tr><td>持久化</td><td><code>create_skill_with_pipeline</code></td><td>一次性建立 Skill（原子操作）</td></tr>
+          <tr><td>自動化</td><td><code>automate_skill_patrol/event/datacheck</code></td><td>設排程/事件觸發</td></tr>
+          <tr><td>讀取</td><td><code>list_alarms</code>, <code>query_alarms</code></td><td>查詢現況</td></tr>
+          <tr><td>治理</td><td><code>propose_knowledge</code>, <code>propose_doc_revision</code></td><td>提案給 Supervisor 審核</td></tr>
+        </tbody>
+      </table>
+
+      <h3>兩個關鍵設計原則</h3>
+      <p><strong>1. 寫入操作一律 human-confirm（Handoff 機制）</strong></p>
+      <pre><code># 危險操作不直接執行，回傳 launch_url 讓人確認
+return await _handoff("confirm_skill_automate", slug, ...,
+                      tell_user="要設成 Auto Patrol 嗎？請開連結確認")
+# → {executed: false, launch_url: "https://aiops-gill.com/handoff/xxx"}</code></pre>
+
+      <p><strong>2. Public/Private 曝光控制（GatedFastMCP）</strong></p>
+      <pre><code>class GatedFastMCP(FastMCP):
+    async def list_tools(self):
+        private = await _private_keys()  # 30 秒快取
+        return [t for t in tools if t.name not in private]</code></pre>
+
+    </div>
+  </section>
+
+  <!-- ── Q4 ── -->
+  <section class="qa-block" id="q4">
+    <div class="qa-label">
+      <span class="qa-index">Round 04</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>她接了多少 MCP Server？</p>
+    </div>
+    <div class="answer">
+      <h2>MCP Server（對外暴露）</h2>
+      <p><strong>只有 1 個</strong> MCP Server：</p>
+
+      <table>
+        <thead><tr><th>Server</th><th>位置</th><th>Port</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>aiops-pipeline-builder</code></td><td><code>mcp_pipeline_builder/server.py</code></td><td>:8060</td><td>對外提供給 Claude Desktop / claude.ai cowork 使用，包含約 30 個工具</td></tr>
+        </tbody>
+      </table>
+
+      <hr/>
+
+      <h2>System MCP 工具（12 個，固定內建）</h2>
+      <p>存在 <code>aiops-app/data/mcps.json</code>，是平台原生的製程資料工具：</p>
+
+      <table>
+        <thead><tr><th>ID</th><th>名稱</th><th>功能</th></tr></thead>
+        <tbody>
+          <tr><td>mcp-001</td><td><code>get_dc_timeseries</code></td><td>DC 量測時序（單機台/參數）</td></tr>
+          <tr><td>mcp-002</td><td><code>get_event_log</code></td><td>設備事件記錄（PM/Alarm/Down）</td></tr>
+          <tr><td>mcp-003</td><td><code>get_tools_status</code></td><td>全廠機台即時狀態</td></tr>
+          <tr><td>mcp-004</td><td><code>get_lot_trace</code></td><td>批次流轉軌跡</td></tr>
+          <tr><td>mcp-005</td><td><code>get_spc_data</code></td><td>SPC 完整報告</td></tr>
+          <tr><td>mcp-006</td><td><code>get_step_dc_timeseries</code></td><td>站點級 DC 時序</td></tr>
+          <tr><td>mcp-007</td><td><code>get_step_spc_chart</code></td><td>站點級 SPC 管制圖</td></tr>
+          <tr><td>mcp-008</td><td><code>list_object_schema</code></td><td>物件參數目錄（APC/EC/FDC...）</td></tr>
+          <tr><td>mcp-009</td><td><code>query_object_parameter</code></td><td>物件參數時序查詢</td></tr>
+          <tr><td>mcp-010</td><td><code>open_lot_trace</code> <span class="tag tag-purple">UI Handoff</span></td><td>開 Lot Trace 面板</td></tr>
+          <tr><td>mcp-011</td><td><code>open_drill_down</code> <span class="tag tag-purple">UI Handoff</span></td><td>開設備下鑽面板</td></tr>
+          <tr><td>mcp-012</td><td><code>open_topology</code> <span class="tag tag-purple">UI Handoff</span></td><td>開製程拓撲視圖</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        另有 <strong>Custom MCP</strong>（動態，用戶可建）：由 Agent 幫忙草擬（<code>draft_mcp</code> / <code>build_mcp</code>），存到 DB，掛載後自動生成對應 Block（<code>source=mcp_auto</code>）供 Pipeline 使用。
+      </div>
+
+      <h3>一句話總結</h3>
+      <p>對外只有 1 個 MCP Server，內部管理 12 個系統內建 MCP 工具 + 用戶可動態新增的 Custom MCP，全部統一由 <code>execute_mcp</code> 呼叫。</p>
+    </div>
+  </section>
+
+  <!-- ── Q5 ── -->
+  <section class="qa-block" id="q5">
+    <div class="qa-label">
+      <span class="qa-index">Round 05</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>這是本地模型嗎還是 API calling？</p>
+    </div>
+    <div class="answer">
+      <h2>預設是 API calling，但支援本地模型</h2>
+
+      <h3>三種模式</h3>
+      <table>
+        <thead><tr><th>模式</th><th>設定</th><th>實作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="tag tag-blue">Anthropic API</span>（預設）</td>
+            <td><code>LLM_PROVIDER=anthropic</code></td>
+            <td>打 <code>api.anthropic.com</code>，用 <code>anthropic</code> SDK</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-green">本地/OpenRouter</span></td>
+            <td><code>LLM_PROVIDER=ollama</code></td>
+            <td>打 <code>OLLAMA_BASE_URL</code>（可以是 Ollama、vLLM、LMStudio、OpenRouter 任何 OpenAI-compat endpoint）</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-purple">企業內部 proxy</span></td>
+            <td><code>LLM_PROVIDER=internal-proxy</code></td>
+            <td>同 OpenAI 格式，加自訂 auth header（<code>X-API-Key</code> 之類）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>不同任務用不同模型</h3>
+      <table>
+        <thead><tr><th>任務</th><th>模型</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>主 Agent（Planner/Builder/Coordinator）</td><td><code>claude-sonnet-4-20250514</code></td><td>預設值</td></tr>
+          <tr><td>MCP Derivative 產生（draft_mcp）</td><td><code>claude-haiku-4-5-20251001</code></td><td>省成本</td></tr>
+          <tr><td>Skill Doc 草稿</td><td><code>claude-haiku-4-5-20251001</code></td><td>可由 <code>SKILL_DOC_LLM_MODEL</code> env 覆蓋</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Bakeoff 實際測過的模型</h3>
+      <p>從 <code>docs/</code> 的 bakeoff 報告看，他們同時測過：</p>
+      <ul>
+        <li>生產用 <strong>Anthropic API</strong>（Claude Sonnet）</li>
+        <li>透過 <strong>OpenRouter</strong> 測 Kimi K2、GLM、Qwen3、gpt-oss-120b</li>
+      </ul>
+      <p>並針對 Kimi K2 在 Fireworks 做 prompt cache 優化（<code>$0.10/M cached</code> vs <code>$0.45/M uncached</code>）。</p>
+    </div>
+  </section>
+
+  <!-- ── Q6 ── -->
+  <section class="qa-block" id="q6">
+    <div class="qa-label">
+      <span class="qa-index">Round 06</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>這會不會有點奇怪，關於你說呼叫哪些 MCP 是單純由一個 model 決定？是有設定特定的 prompt 或 system prompt 嗎？還是直接把 user prompt 丟進去？還是有搭配什麼參數？<br/><br/>另外比較好的做法會不會是一個 MCP 裡面決定呼叫什麼工具比較好？現在有 12 個 MCP，感覺像是 12 個工具的切法？</p>
+    </div>
+    <div class="answer">
+      <h2>實際運作方式</h2>
+      <p>不是直接丟 user prompt。有完整的 prompt 結構：</p>
+
+      <div class="arch-box">
+System Prompt = [Block 1: 穩定，可快取]
+  <span class="hl">&lt;soul&gt;</span> 人設 + 硬規則 + 路由規則 <span class="hl">&lt;/soul&gt;</span>
+
+            + [Block 2: 每次動態注入]
+  <span class="hl2">&lt;user_preference&gt;</span> 使用者偏好 <span class="hl2">&lt;/user_preference&gt;</span>
+  <span class="hl2">&lt;skill_catalog&gt;</span>   現有 skill 清單 <span class="hl2">&lt;/skill_catalog&gt;</span>
+  <span class="hl2">&lt;mcp_catalog&gt;</span>     12 個 MCP 的名稱 + 說明 <span class="hl2">&lt;/mcp_catalog&gt;</span>
+
+Tools（Anthropic tool_use API）= 高階工具清單
+  <span class="hl3">plan_pipeline</span> / <span class="hl3">build_pipeline</span> / <span class="hl3">modify_current_chart</span> /
+  <span class="hl3">get_current_status</span> / <span class="hl3">search_skills</span> / <span class="hl3">activate_skill</span> / ...
+      </div>
+
+      <div class="callout">
+        <strong>關鍵：</strong>12 個 System MCP <strong>不是直接當成 tool</strong> 傳給 LLM，而是放在 <code>&lt;mcp_catalog&gt;</code> 區塊讓模型「看到」。模型如果要用，是呼叫通用工具 <code>execute_mcp(mcp_name="get_spc_data", params={...})</code>，由 dispatcher 實際打 API。
+      </div>
+
+      <hr/>
+
+      <h2>你的設計問題分析</h2>
+
+      <h3>現在的做法（model 選 MCP）</h3>
+      <pre><code>用戶說「EQP-03 SPC 狀況」
+  → LLM 看 mcp_catalog → 決定呼叫 execute_mcp("get_spc_data", ...)
+  → dispatcher 打 API</code></pre>
+
+      <p><strong>已知問題：</strong>LLM 要「記住」12 個 MCP 的名稱和參數，容易選錯或填錯參數。早期版本有 bug：LLM 猜錯欄位名稱（<code>toolID</code> vs <code>equipment_id</code>），燒了好幾輪才修正，程式碼裡的 <code>_mcp_json_schema</code> 就是在解決這個問題。</p>
+
+      <h3>你說的「讓 MCP 內部決定」— 其實外部介面就是這樣做的</h3>
+      <p><code>mcp_pipeline_builder/server.py</code> 就是一個「聰明的 MCP」，外部 Claude 只呼叫 <code>build_pipeline(instruction)</code> 這一個高階工具，裡面的 Planner/Builder 自己決定用哪些 block。</p>
+      <p>這也是為什麼 <code>chat_agent_loop.py</code> 的 <code>_TOOLS</code> 設計成高階工具而非直接暴露 12 個 MCP：</p>
+      <pre><code># LLM 看到的是高階意圖工具
+plan_pipeline(instruction)       # ← 不是 get_spc_data / get_lot_trace
+modify_current_chart(instruction)
+get_current_status()</code></pre>
+
+      <hr/>
+
+      <h2>三層設計評估</h2>
+      <table>
+        <thead><tr><th>層級</th><th>誰決定</th><th>評估</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Chat Agent</td>
+            <td>LLM 選高階工具（plan/modify/status）</td>
+            <td><span class="tag tag-green">合理</span> 工具定義清晰，有 system prompt 路由規則約束</td>
+          </tr>
+          <tr>
+            <td>高階工具內部</td>
+            <td>程式碼或 Planner Agent 決定用哪些 MCP/Block</td>
+            <td><span class="tag tag-green">合理</span> 封裝好，外部看不到細節</td>
+          </tr>
+          <tr>
+            <td><code>execute_mcp</code></td>
+            <td>LLM 直接選 MCP 名稱</td>
+            <td><span class="tag tag-orange">脆弱</span> 有遇到過問題，理想上應再包一層語意路由</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        <strong>結論：</strong>你的觀察沒錯——理想上 12 個 MCP 應該再包一層語意路由，而不是讓 LLM 直接查名稱表來決定。這個專案目前是兩者混用：外部走高階包裝，內部部分還是讓 LLM 直接選 MCP name。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q7 ── -->
+  <section class="qa-block" id="q7">
+    <div class="qa-label">
+      <span class="qa-index">Round 07</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>看看以下問題，你會如何回答（關於這個專案）：<br/>
+      1. AI Agent 是否可以自主執行多步驟任務？<br/>
+      2. 使用 RAG 嗎？使用 SQL 查詢嗎？有 Code Sandbox 嗎？<br/>
+      3. 是否部署在 AWS VPC？<br/>
+      4. 是否有 Multi-model failover？</p>
+    </div>
+    <div class="answer">
+      <h2>1 · Agent 是否可以自主執行多步驟任務</h2>
+      <p><strong>是，而且是核心設計。</strong></p>
+      <ul>
+        <li>Chat Agent（<code>chat_agent_loop.py</code>）：Anthropic tool-use loop，最多 <strong>8 輪工具呼叫</strong>不需要 human in the loop。例如工程師說「分析 EQP-03 最近 SPC 趨勢」→ Agent 自動決定呼叫哪些工具、以什麼順序，最後組裝報告。</li>
+        <li>Builder Agent（<code>graph_build/graph.py</code>）：LangGraph StateGraph，<code>START → goal_plan → agentic_phase_loop → validate → dispatch_op → finalize → END</code>，可自動修復（<code>repair_plan</code> / <code>repair_op</code> 各最多 2 次）。</li>
+        <li>Auto-Patrol（Skill role=patrol）：排程或事件驅動，完全無人觸發，條件符合時自動建 Alarm。</li>
+      </ul>
+
+      <h2>2 · RAG / SQL / Code Sandbox</h2>
+      <table>
+        <thead><tr><th>技術</th><th>是否使用</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>RAG</strong></td>
+            <td><span class="tag tag-green">是（輕量）</span></td>
+            <td>pgvector + bge-m3/Cohere 1024 維向量。<code>agent_knowledge</code> 表儲存過去經驗與規則，按語意搜尋注入 context。非主力查詢路徑，屬於輔助補充。</td>
+          </tr>
+          <tr>
+            <td><strong>SQL 查詢</strong></td>
+            <td><span class="tag tag-orange">不直接用</span></td>
+            <td>用 Block DAG（pandas 操作）取代 SQL。製程資料來自 System MCP（HTTP API），不是讓 LLM 生成 SQL。避免 LLM 產生危險 SQL 的風險。</td>
+          </tr>
+          <tr>
+            <td><strong>Code Sandbox</strong></td>
+            <td><span class="tag tag-orange">Mock，尚未上線</span></td>
+            <td><code>/internal/sandbox/run</code> 路由存在但只回 mock response（"Phase 4 mock — real sandbox wires in Phase 5"）。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>3 · AWS VPC 部署</h2>
+      <p>從 code 看不到明確的 AWS VPC 設定。目前是 <strong>EC2 單主機 + systemd</strong> 管理，nginx 做反向代理 + TLS 終止。沒有 ALB、VPC Security Group 等 AWS-specific 設定。<code>docs/deploy-kubernetes.md</code> 有 K8s 遷移計劃但尚未執行。</p>
+
+      <h2>4 · Multi-model Failover</h2>
+      <p><strong>目前沒有自動 failover。</strong>LLM client 是 singleton（<code>get_llm_client()</code> 快取），若 Anthropic API 不可達，所有 Agent 功能都會 fail。但有以下層次的靈活性：</p>
+      <ul>
+        <li><code>LLM_PROVIDER</code> env 可切換 <code>anthropic / ollama / internal-proxy</code>（需重啟）</li>
+        <li>文件（<code>docs/LLM_BAKEOFF_4MODEL.html</code>）顯示曾測試 Kimi K2、GLM、Qwen3、GPT 等多個模型</li>
+        <li>不同任務用不同模型（Sonnet 做主 Agent、Haiku 做衍生草稿）但沒有 automatic failover 機制</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── Q8 ── -->
+  <section class="qa-block" id="q8">
+    <div class="qa-label">
+      <span class="qa-index">Round 08</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>怎麼回答這個勾選題：這個專案使用了哪些 AI 技術？<br/>
+      □ Generative AI &nbsp; □ RAG &nbsp; □ AI Copilot &nbsp; □ Conventional ML/DL</p>
+    </div>
+    <div class="answer">
+      <h2>勾選答案</h2>
+      <table>
+        <thead><tr><th>技術</th><th>是否勾選</th><th>根據</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Generative AI</strong></td>
+            <td><span class="tag tag-green">✓ 勾</span></td>
+            <td>核心：Anthropic Claude（<code>claude-sonnet-4-20250514</code>）生成 pipeline 設計、分析摘要、對話回應。所有 Agent 都是 GenAI 驅動。</td>
+          </tr>
+          <tr>
+            <td><strong>RAG</strong></td>
+            <td><span class="tag tag-green">✓ 勾</span></td>
+            <td>pgvector + embedding（bge-m3 / Cohere）向量搜尋，<code>agent_knowledge</code> 儲存過去案例，按語意相似度注入 context。</td>
+          </tr>
+          <tr>
+            <td><strong>AI Copilot</strong></td>
+            <td><span class="tag tag-green">✓ 勾</span></td>
+            <td>製程工程師的對話介面，可自然語言操控 pipeline 建構、查詢設備狀況、設定自動巡檢。這是平台的主打體驗。</td>
+          </tr>
+          <tr>
+            <td><strong>Conventional ML/DL</strong></td>
+            <td><span class="tag tag-orange">✗ 不勾</span></td>
+            <td>沒有 scikit-learn、PyTorch、TensorFlow 等傳統 ML 框架，不做模型訓練。pandas/numpy/scipy 用來做資料處理，不算 ML/DL。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Q9 ── -->
+  <section class="qa-block" id="q9">
+    <div class="qa-label">
+      <span class="qa-index">Round 09</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>Conventional ML/DL 是什麼？</p>
+    </div>
+    <div class="answer">
+      <h2>Conventional ML / DL 的定義</h2>
+
+      <h3>Conventional ML（傳統機器學習）</h3>
+      <p>工程師從資料中提取特徵，再用統計模型學習規則。代表技術：</p>
+      <ul>
+        <li>Decision Tree（決策樹）、Random Forest（隨機森林）</li>
+        <li>SVM（支持向量機）、Logistic Regression（邏輯迴歸）</li>
+        <li>K-Means 聚類、PCA 降維</li>
+        <li>工具：<strong>scikit-learn</strong>（Python 的主流 ML 套件）</li>
+      </ul>
+
+      <h3>Deep Learning（深度學習）</h3>
+      <p>多層神經網路，從大量原始資料自動提取特徵。代表技術：</p>
+      <ul>
+        <li>CNN（卷積神經網路）— 圖像辨識</li>
+        <li>RNN / LSTM / Transformer — 時序、自然語言</li>
+        <li>工具：<strong>PyTorch</strong>（Facebook/Meta）、<strong>TensorFlow/Keras</strong>（Google）</li>
+      </ul>
+
+      <h3>跟這個專案的關係</h3>
+      <div class="callout">
+        <strong>這個平台是 GenAI（LLM）驅動，不是 Conventional ML/DL。</strong><br/>
+        分析邏輯靠 Block DAG（pandas 規則）+ Claude 推理，不訓練任何預測模型。
+        LLM 本身是別人訓練好的大型 Transformer，不算平台自己的 DL 工作。
+      </div>
+
+      <table>
+        <thead><tr><th>比較</th><th>Conventional ML/DL</th><th>這個平台（GenAI）</th></tr></thead>
+        <tbody>
+          <tr><td>做什麼</td><td>訓練預測模型</td><td>用 LLM 推理 + 規則執行</td></tr>
+          <tr><td>資料量需求</td><td>需要大量標記訓練資料</td><td>主要靠提示詞工程</td></tr>
+          <tr><td>結果形式</td><td>模型權重（.pkl, .pt）</td><td>文字、圖表、結構化報告</td></tr>
+          <tr><td>典型代表</td><td>scikit-learn, PyTorch</td><td>Anthropic Claude API</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Q10 ── -->
+  <section class="qa-block" id="q10">
+    <div class="qa-label">
+      <span class="qa-index">Round 10</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>他的 RAG 是不是屬於很輕量？</p>
+    </div>
+    <div class="answer">
+      <h2>是，屬於輕量 RAG</h2>
+
+      <h3>和標準 RAG 的比較</h3>
+      <table>
+        <thead><tr><th>元件</th><th>標準 RAG 方案</th><th>這個專案</th></tr></thead>
+        <tbody>
+          <tr><td>向量資料庫</td><td>Pinecone / Weaviate / Qdrant（專用）</td><td>PostgreSQL + pgvector（共用 DB）</td></tr>
+          <tr><td>Embedding 模型</td><td>OpenAI text-embedding-3 / 專用服務</td><td>Ollama bge-m3（本地）或 Cohere（雲端）</td></tr>
+          <tr><td>Chunking pipeline</td><td>文件切割、重疊、清洗</td><td>直接存整段文字（無切割 pipeline）</td></tr>
+          <tr><td>Reranker</td><td>Cohere rerank / bge-reranker</td><td>無，直接 top-k cosine</td></tr>
+          <tr><td>知識量級</td><td>大規模文件庫（萬級 chunk）</td><td>少量過去案例 / 規則（百級以內）</td></tr>
+          <tr><td>更新機制</td><td>定期 re-index pipeline</td><td>Agent 反思後手動寫入 <code>agent_knowledge</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>為什麼夠用？</h3>
+      <p>這個 RAG 的目的不是搜大型知識庫——它是把「過去工程師做過的好案例、提出的規則」存起來，下次遇到語意相近的問題時注入 context，讓 Agent 不用每次重新摸索。資料量小、語意明確，pgvector 的輕量方案完全夠用。</p>
+
+      <div class="callout">
+        <strong>結論：</strong>這是「經驗記憶」用途的 RAG，不是文件庫 RAG。輕量是刻意設計，不是技術不足。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q11 ── -->
+  <section class="qa-block" id="q11">
+    <div class="qa-label">
+      <span class="qa-index">Round 11</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>為什麼需要向量搜尋呢？</p>
+    </div>
+    <div class="answer">
+      <h2>為什麼傳統 SQL 搜尋不夠用</h2>
+
+      <p>假設工程師過去存了一條知識：「EQP-08 的 Yield 下降通常與 Step 3 的 DC 值 drift 有關，建議先看 APC 參數。」</p>
+
+      <h3>今天工程師問：</h3>
+      <pre><code>"偵測 OOC 趨勢，找出可能的設備異常原因"</code></pre>
+
+      <table>
+        <thead><tr><th>搜尋方式</th><th>能找到嗎？</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>SQL LIKE '%OOC%'</code></td>
+            <td><span class="tag tag-orange">找不到</span></td>
+            <td>存的是「Yield 下降」「DC 值 drift」，沒有「OOC」關鍵字</td>
+          </tr>
+          <tr>
+            <td>全文搜尋（Elasticsearch）</td>
+            <td><span class="tag tag-orange">找不到</span></td>
+            <td>「偵測」「趨勢」「異常原因」與「Yield 下降」「drift」字面不同</td>
+          </tr>
+          <tr>
+            <td><strong>向量搜尋（pgvector）</strong></td>
+            <td><span class="tag tag-green">找到了</span></td>
+            <td>兩段文字的語意相近（都在說製程異常偵測）→ cosine similarity 高</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>向量搜尋的原理（一句話）</h3>
+      <p>把文字轉成 1024 維的數值向量，語意相似的文字在高維空間裡距離近，用 cosine distance 找最近的幾筆，不需要字面完全匹配。</p>
+
+      <div class="callout">
+        <strong>關鍵場景：</strong>半導體製程的問題描述方式多樣（中文、英文、縮寫、技術術語交替），向量搜尋讓過去的知識能被準確召回，即使用詞完全不同。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q12 ── -->
+  <section class="qa-block" id="q12">
+    <div class="qa-label">
+      <span class="qa-index">Round 12</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>解釋一下 Pipeline 由 Block 組成（DAG 結構）—— 要用實際的專案 code 作為解釋基礎。</p>
+    </div>
+    <div class="answer">
+      <h2>Pipeline = DAG of Blocks</h2>
+
+      <h3>什麼是 DAG？</h3>
+      <p><strong>Directed Acyclic Graph（有向無環圖）</strong>：每個節點是一個 Block，節點間有方向性的邊（資料從上游流向下游），不允許循環。</p>
+
+      <h3>一個實際的 Pipeline 例子</h3>
+      <pre><code>block_process_history  →  block_filter  →  block_step_check  →  block_line_chart
+（查製程歷史）           （篩選條件）       （判斷是否超標）       （畫折線圖）</code></pre>
+
+      <h3>executor.py — 自製 DAG 執行引擎（核心）</h3>
+      <p>不用 Airflow、Celery 任何框架，純 Python <code>collections.deque</code> 做拓撲排序：</p>
+      <pre><code># python_ai_sidecar/pipeline_builder/executor.py（節錄）
+from collections import deque
+
+# 建 in-degree 表
+in_degree = {n: 0 for n in nodes}
+for edge in edges:
+    in_degree[edge.target] += 1
+
+# 拓撲排序 queue：從 in_degree==0 的節點開始
+queue = deque([n for n in nodes if in_degree[n] == 0])
+
+while queue:
+    node_id = queue.popleft()
+    executor = registry.get(node_id)        # 取得對應的 BlockExecutor
+    result = await executor.execute(
+        params=node.params,
+        inputs=upstream_outputs[node_id],   # 上游的輸出（通常是 DataFrame）
+        context=ctx
+    )
+    outputs[node_id] = result               # 存起來給下游用
+    for downstream in graph.successors(node_id):
+        in_degree[downstream] -= 1
+        if in_degree[downstream] == 0:
+            queue.append(downstream)</code></pre>
+
+      <h3>Block 間的資料傳遞</h3>
+      <p>每個 Block 的 <code>execute()</code> 接收 <code>inputs["data"]</code>（pandas DataFrame），處理完回傳 <code>{"data": result_df}</code>，下游接著用：</p>
+      <pre><code># blocks/filter.py
+async def execute(self, *, params, inputs, context) -> dict:
+    df = inputs["data"]          # ← 上游傳來的 DataFrame
+    column = params["column"]
+    op = params["operator"]
+    mask = _apply_op(df[column], op, params.get("value"))
+    return {"data": df[mask]}    # → 傳給下游</code></pre>
+
+      <h3>為什麼用 DAG + pandas 而不是讓 LLM 寫 SQL？</h3>
+      <ul>
+        <li>LLM 生成 SQL 有 SQL injection 和誤刪資料的風險</li>
+        <li>DAG 每個 Block 的操作有限（filter/aggregate/chart），LLM 只填參數，不寫邏輯</li>
+        <li>可以對 pipeline 做 dry-run / validate 而不擔心副作用</li>
+        <li>Block 有明確的 input_schema / output_schema，LLM 更容易正確生成</li>
+      </ul>
+
+      <div class="callout">
+        <strong>設計哲學：</strong>LLM 決定「要用哪些 block、參數填什麼」（語意）；DAG executor 決定「執行順序」（結構）；Block 的 Python 程式碼決定「實際運算」（邏輯）。三層各司其職。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q13 ── -->
+  <section class="qa-block" id="q13">
+    <div class="qa-label">
+      <span class="qa-index">Round 13</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>有多少類型 Block？有無特殊限制、規則？</p>
+    </div>
+    <div class="answer">
+      <h2>Block 總量與分類</h2>
+
+      <p><code>BUILTIN_EXECUTORS</code>（<code>blocks/__init__.py</code>）裡有 <strong>60+ 個</strong> builtin block，再加上動態的 MCP Proxy block。依功能分四類：</p>
+
+      <p style="font-size:13px;color:var(--text3);margin-bottom:8px">⚠️ 兩個維度是正交的：<strong>功能分類</strong>（做什麼）× <strong>執行類型</strong>（怎麼跑）。大部分 block 的執行類型都是 Builtin；MCP Proxy 是另一條路徑，不屬於任何功能分類。</p>
+      <table>
+        <thead><tr><th>功能分類</th><th>Block 名稱</th><th>執行類型</th><th>執行對象 / 方式</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Source</strong></td>
+            <td><code>block_process_history</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>呼叫 System MCP → 取製程歷史，輸出 DataFrame</td>
+          </tr>
+          <tr>
+            <td><strong>Source</strong></td>
+            <td><code>block_list_objects</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>呼叫 System MCP → 取物件清單，輸出 DataFrame</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_filter</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>pandas boolean mask 過濾列</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_groupby_agg</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>pandas <code>groupby().agg()</code> 分組聚合</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_unnest</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>pandas <code>explode()</code> 展開巢狀欄位</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_select</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>pandas 欄位選取 / rename</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_time_bucket</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>pandas <code>resample()</code> 時間桶聚合</td>
+          </tr>
+          <tr>
+            <td><strong>Transform</strong></td>
+            <td><code>block_mcp_foreach</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>本身是 Builtin；對 DataFrame 每一列循環呼叫指定 System MCP</td>
+          </tr>
+          <tr>
+            <td><strong>Logic</strong></td>
+            <td><code>block_step_check</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>聚合 DataFrame → scalar → 比對門檻 → <code>{pass: bool, value, note}</code>。Auto Patrol 必備。</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_line_chart</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 Vega-Lite 折線圖 spec</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_bar_chart</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 Vega-Lite 柱狀圖 spec</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_box_plot</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 Vega-Lite 箱形圖 spec</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_heatmap</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 Vega-Lite 熱力圖 spec</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_xbar_r</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 X-bar/R SPC 管制圖（製程品管專用）</td>
+          </tr>
+          <tr>
+            <td><strong>Output</strong></td>
+            <td><code>block_pareto</code></td>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>輸出 Pareto 柏拉圖</td>
+          </tr>
+          <tr>
+            <td><strong>動態代理</strong></td>
+            <td>（由 admin 動態建立，無固定名）</td>
+            <td><span class="tag tag-purple">MCP Proxy</span></td>
+            <td><code>McpProxyBlockExecutor</code> 轉發到指定 MCP 工具。admin 勾選「連動產生 Block」時自動生成，功能由背後的 MCP 定義。</td>
+          </tr>
+          <tr>
+            <td><strong>—</strong></td>
+            <td>（無，預留介面）</td>
+            <td><span class="tag tag-orange">Native</span></td>
+            <td>目前沒有任何 block 使用，為未來擴充保留。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>11 個 essential block（核心必備）</h3>
+      <p><code>seed.py</code> 中標記 <code>essential=True</code>，代表 LLM 被提示要優先使用這些 block：</p>
+      <pre><code>block_process_history, block_filter, block_groupby_agg, block_unnest,
+block_time_bucket, block_select,
+block_line_chart, block_bar_chart, block_box_plot, block_xbar_r, block_pareto</code></pre>
+
+      <h3>特殊規則</h3>
+
+      <h4>1. Auto Patrol 必須包含 block_step_check</h4>
+      <p><code>block_step_check</code> 是唯一輸出 <code>pass: bool</code> 的 block（category="check"）。Auto Patrol pipeline 的最後 Logic 節點必須是它，否則無法判斷是否觸發告警。</p>
+      <pre><code># blocks/step_check.py
+# 聚合函數（aggregation）: count, sum, mean, max, min, last, exists
+# 比較運算子（operator）: >=, >, =, &lt;, &lt;=, changed, drift
+return {
+    "pass": result,        # ← True/False，決定是否發 Alarm
+    "value": current_val,
+    "note": f"{agg}={current_val} {op} {threshold}"
+}</code></pre>
+
+      <h4>2. 兩個維度：功能分類 vs 執行類型</h4>
+      <p>Block 有兩個獨立的描述維度，容易混淆：</p>
+      <p><strong>維度 A：功能分類（block 做什麼）</strong> — 上方表格的 Source / Transform / Logic / Output，描述業務用途。</p>
+      <p><strong>維度 B：執行類型（block 怎麼跑）</strong> — 共 3 種，描述 runtime 的呼叫機制：</p>
+      <table>
+        <thead><tr><th>執行類型</th><th>判斷條件</th><th>執行者</th><th>誰會用</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="tag tag-blue">Builtin</span></td>
+            <td>名稱在 <code>BUILTIN_EXECUTORS</code> dict 中</td>
+            <td>對應的 Python class（如 <code>FilterBlockExecutor</code>）</td>
+            <td><strong>幾乎所有 block</strong>（60+ 個都是這類）</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-purple">MCP Proxy</span></td>
+            <td><code>implementation.type == "mcp_proxy"</code></td>
+            <td><code>McpProxyBlockExecutor</code>（轉發到指定 MCP 工具）</td>
+            <td>admin 勾選「連動產生 Block」時自動建立的動態 block</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-orange">Native</span></td>
+            <td>未來擴充（保留介面）</td>
+            <td>尚未定義</td>
+            <td>目前沒有任何 block 使用</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <strong>關鍵：</strong>功能分類（Source/Transform/Logic/Output）的 block 幾乎全部屬於「Builtin」執行類型。「MCP Proxy」是另一條執行路徑，不屬於任何功能分類——它是一個動態代理，功能由背後的 MCP 決定。兩個維度正交，不要混用。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q14 ── -->
+  <section class="qa-block" id="q14">
+    <div class="qa-label">
+      <span class="qa-index">Round 14</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>解釋一下他的 Skills 系統設計，是否與我們一般認知的 Claude Skills 不太一樣？<br/>
+      其實純的是某種特定 DAG 對嗎，然後這些 DAG 可能是可執行的，所以造成一種復用的感覺，有點類似存一些特定的 script or python code？</p>
+    </div>
+    <div class="answer">
+      <h2>這個專案有「兩種」Skills，完全不同概念</h2>
+
+      <h3>Domain Skill（skills_v2）— 可執行 DAG</h3>
+      <p>存在 <code>pb_published_skills</code> 表。本質是：<strong>一份有名字的 Pipeline + 可選的自動化包裝</strong>。</p>
+      <pre><code>-- V66__skills_v2.sql
+CREATE TABLE pb_published_skills (
+  slug TEXT,             -- 可呼叫的識別碼
+  pipeline_nodes JSONB,  -- 整份 DAG（nodes + edges）
+  role TEXT,             -- 'tool' | 'patrol' | 'datacheck'
+  trigger_config JSONB,  -- 排程/事件 trigger 設定
+  alarm_gate JSONB       -- 告警條件設定
+);</code></pre>
+
+      <p>工程師建好一個分析 pipeline（例如「EQP-08 SPC OOC 檢查」），把它儲存為 Skill。下次需要時直接執行這個 Skill，不需要重新建 pipeline。</p>
+
+      <div class="callout">
+        <strong>你說得對：</strong>Domain Skill ≈ 儲存的可執行 script。差別是存的是 JSON DAG 定義，而不是 Python source code，但執行結果和跑一段 pandas script 等效。
+      </div>
+
+      <h3>Agent Skill（agent_skills）— Prompt 說明書</h3>
+      <p>存在 <code>agent_skills</code> 表。本質是：<strong>教 Coordinator Agent「怎麼做某類事」的 Markdown 文件</strong>。</p>
+      <pre><code>-- V82__agent_skills.sql
+CREATE TABLE agent_skills (
+  name TEXT,           -- 如 'alarm-handling'
+  when_to_use TEXT,    -- 注入 system prompt 的摘要（很短）
+  body TEXT,           -- 完整說明書（Markdown，按需載入）
+  enabled BOOLEAN
+);</code></pre>
+
+      <p>Agent 看到 <code>when_to_use</code> 判斷要不要用這個 skill，確定後才呼叫 <code>load_skill</code> 工具載入完整 <code>body</code>（Progressive Disclosure，節省 token）。</p>
+
+      <h3>與 Claude Skills 的比較</h3>
+      <table>
+        <thead><tr><th></th><th>Claude Skills（claude.ai）</th><th>Domain Skill（skills_v2）</th><th>Agent Skill（agent_skills）</th></tr></thead>
+        <tbody>
+          <tr><td>本質</td><td>Slash command 觸發的 prompt 模板</td><td>儲存的可執行 DAG pipeline</td><td>Agent 的操作說明書（Markdown）</td></tr>
+          <tr><td>觸發方式</td><td>用戶輸入 <code>/skill-name</code></td><td>Agent 呼叫 <code>activate_skill(slug)</code> 或排程自動</td><td>Coordinator Agent 按需 <code>load_skill(name)</code></td></tr>
+          <tr><td>執行結果</td><td>展開成 prompt 文字</td><td>跑 DAG，回傳圖表/報告/告警判斷</td><td>指導 Agent 如何用工具，不直接執行</td></tr>
+          <tr><td>類比</td><td>快捷指令</td><td>存起來的 Python script</td><td>操作手冊</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Q15 ── -->
+  <section class="qa-block" id="q15">
+    <div class="qa-label">
+      <span class="qa-index">Round 15</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>Pipeline 或 Block 設計有沒有引用什麼第三方 library / framework？還是從頭自己做？</p>
+    </div>
+    <div class="answer">
+      <h2>Pipeline / Block 層：幾乎全部自製</h2>
+
+      <table>
+        <thead><tr><th>元件</th><th>做法</th><th>為什麼</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>DAG 執行引擎</td>
+            <td><strong>自製</strong>（<code>collections.deque</code> 拓撲排序）</td>
+            <td>Airflow/Celery 太重、為分散式設計；這個只需要 in-process 同步執行</td>
+          </tr>
+          <tr>
+            <td>Block 基礎類別</td>
+            <td><strong>自製</strong>（<code>BlockExecutor</code> ABC）</td>
+            <td>統一介面 <code>execute(params, inputs, context) → dict</code>，簡單</td>
+          </tr>
+          <tr>
+            <td>Block 內的資料運算</td>
+            <td><strong>pandas / numpy / scipy</strong></td>
+            <td>DataFrame 操作、統計計算；這是唯一大量引用的外部套件</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>完整套件分層</h3>
+      <table>
+        <thead><tr><th>用途</th><th>套件</th><th>層次</th></tr></thead>
+        <tbody>
+          <tr><td>LLM API 呼叫</td><td><code>anthropic &gt;=0.42.0</code></td><td>Agent 層</td></tr>
+          <tr><td>Agent 圖拓撲</td><td><code>langgraph &gt;=0.2.0</code> + <code>langchain-core</code></td><td>Agent 層（<strong>僅</strong> Planner/Builder/Coordinator graph）</td></tr>
+          <tr><td>Block 資料運算</td><td><code>pandas==2.2.3</code>、<code>numpy==2.1.3</code>、<code>scipy==1.14.1</code></td><td>Block 執行層</td></tr>
+          <tr><td>DAG 執行</td><td>純 Python 標準庫（<code>collections.deque</code>）</td><td>Pipeline 執行層</td></tr>
+          <tr><td>向量搜尋</td><td>pgvector（PostgreSQL extension）</td><td>RAG 層</td></tr>
+          <tr><td>Embedding</td><td>Ollama bge-m3 / <code>mem0ai &gt;=0.1.29</code> / Cohere</td><td>RAG 層</td></tr>
+          <tr><td>MCP Server</td><td><code>fastmcp</code>（Python）</td><td><code>mcp_pipeline_builder/</code></td></tr>
+          <tr><td>API Server</td><td><code>fastapi==0.115.4</code> + <code>uvicorn</code></td><td>sidecar server 層</td></tr>
+          <tr><td>Token 計數</td><td><code>tiktoken &gt;=0.7.0</code></td><td>Context 管理</td></tr>
+          <tr><td>Cron 解析</td><td><code>croniter &gt;=2.0</code></td><td>Auto Patrol 排程</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>重要：</strong><code>langgraph</code> 只用於 Agent 層（LangGraph StateGraph topology），<strong>絕對不用於</strong> Block / Pipeline 執行。Block DAG 是完全獨立的自製執行引擎。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q16 ── -->
+  <section class="qa-block" id="q16">
+    <div class="qa-label">
+      <span class="qa-index">Round 16</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>但是每個 block 實際上代表要執行什麼，是怎麼決定、又怎麼實現的？</p>
+    </div>
+    <div class="answer">
+      <h2>兩層設計：描述層 + 執行層</h2>
+
+      <h3>層一：描述層（seed.py）— 給 LLM 看的</h3>
+      <p>定義 block 的語意：名字、參數 schema、輸入輸出格式、使用說明。LLM 讀這個來決定「要不要用這個 block、傳什麼參數」。</p>
+      <pre><code># seed.py（節錄）
+{
+  "name": "block_filter",
+  "description": "過濾資料列 / Filter rows...",
+  "param_schema": {
+    "column":   {"type": "string", "required": True},
+    "operator": {"type": "string", "enum": [">=",">","=","&lt;","&lt;=","in","not_in","contains"]},
+    "value":    {"type": ["number","string","array"]}
+  },
+  "input_schema":  {"data": "DataFrame"},
+  "output_schema": {"data": "DataFrame"},
+  "essential": True
+}</code></pre>
+
+      <h3>層二：執行層（blocks/*.py）— 真正跑的 Python</h3>
+      <p>每個 block 對應一個 <code>BlockExecutor</code> 子類別，實作 <code>execute()</code> 方法：</p>
+      <pre><code># blocks/filter.py
+class FilterBlockExecutor(BlockExecutor):
+    async def execute(self, *, params, inputs, context) -> dict:
+        df = inputs["data"]                     # 上游 node 傳來的 DataFrame
+        column = self.require(params, "column")
+        op     = self.require(params, "operator")
+        value  = params.get("value")
+        mask   = _apply_op(df[column], op, value)
+        return {"data": df[mask].reset_index(drop=True)}  # 傳給下游</code></pre>
+
+      <h3>層三：Runtime 對應（BUILTIN_EXECUTORS + block_registry.py）</h3>
+      <p><code>blocks/__init__.py</code> 是中央路由表，字串 block_name → Python class：</p>
+      <pre><code># blocks/__init__.py
+BUILTIN_EXECUTORS: dict[str, type[BlockExecutor]] = {
+    "block_filter":       FilterBlockExecutor,
+    "block_step_check":   StepCheckBlockExecutor,
+    "block_groupby_agg":  GroupByAggBlockExecutor,
+    "block_line_chart":   LineChartBlockExecutor,
+    # 60+ 個 ...
+}</code></pre>
+
+      <p><code>block_registry.py</code> 在 runtime 從 Java API 拉 block catalog，再做 dispatch：</p>
+      <pre><code># block_registry.py（節錄）
+impl = spec.get("implementation") or {}
+if impl.get("type") == "mcp_proxy":
+    # 動態型：交給 MCP 工具去執行
+    executors[key] = McpProxyBlockExecutor(mcp_name=impl["mcp"])
+else:
+    # 靜態型：查 BUILTIN_EXECUTORS 拿 Python class
+    exec_cls = BUILTIN_EXECUTORS.get(name)
+    executors[key] = exec_cls()</code></pre>
+
+      <h3>執行流：DataFrame 在 DAG 節點間流動</h3>
+      <div class="arch-box">
+<span class="hl">node_A</span>.execute(inputs={})                → {"data": df_raw}
+  ↓
+<span class="hl">node_B</span>.execute(inputs={"data": df_raw})    → {"data": df_filtered}
+  ↓
+<span class="hl">node_C</span>.execute(inputs={"data": df_filtered}) → {"chart": vega_lite_spec}
+      </div>
+
+      <h3>一張圖總結</h3>
+      <table>
+        <thead><tr><th>誰決定</th><th>什麼</th><th>在哪裡</th></tr></thead>
+        <tbody>
+          <tr><td>LLM</td><td>要用哪個 block、填什麼 params</td><td>讀 seed.py 的 description</td></tr>
+          <tr><td>BUILTIN_EXECUTORS</td><td>block_name → Python class</td><td><code>blocks/__init__.py</code></td></tr>
+          <tr><td>block_registry</td><td>runtime dispatch（含 mcp_proxy 分支）</td><td><code>block_registry.py</code></td></tr>
+          <tr><td>execute() 方法</td><td>實際的 pandas 運算</td><td><code>blocks/filter.py</code>、<code>step_check.py</code>...</td></tr>
+          <tr><td>executor.py</td><td>DAG 拓撲排序 + 逐節點呼叫</td><td><code>pipeline_builder/executor.py</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Q17 ── -->
+  <section class="qa-block" id="q17">
+    <div class="qa-label">
+      <span class="qa-index">Round 17</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>這一整份專案有設計文件、說明文件或功能文件嗎？</p>
+    </div>
+    <div class="answer">
+      <h2>有，而且文件非常豐富</h2>
+      <p>這個專案有三層文件體系：</p>
+
+      <h3>層一：核心規則文件（最高優先）</h3>
+      <table>
+        <thead><tr><th>文件</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>CLAUDE.md</code></td>
+            <td><strong>最重要的一份。</strong>架構原則、禁止事項、coding 規範、部署規範。AI coding agent（Claude）開工前必讀的「憲法」。包含：禁止在 prompt 塞 case-specific rule、MCP description 是唯一文件來源、flow 由 graph 決定不由 LLM 決定等核心設計哲學。</td>
+          </tr>
+          <tr>
+            <td><code>README.md</code></td>
+            <td>架構圖、服務 Port 表、Stack 版本、Local dev quickstart、Deploy 指令</td>
+          </tr>
+          <tr>
+            <td><code>Todos.md</code></td>
+            <td>當前待辦事項（active work tracking）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>層二：功能 Spec 文件（docs/）</h3>
+      <table>
+        <thead><tr><th>文件</th><th>內容</th></tr></thead>
+        <tbody>
+          <tr><td><code>docs/BLOCKS.md</code></td><td>所有 Block 的完整目錄（參數、輸入輸出、使用場景）</td></tr>
+          <tr><td><code>docs/CHAT_AGENT_LOOP_SPEC.md</code></td><td>Chat Coordinator 從 rigid 分類器改成 tool-use loop 的設計規格</td></tr>
+          <tr><td><code>docs/MULTI_AGENT_PHASE0_SPEC.md</code></td><td>Planner/Builder/Repair 三 Agent 拆分設計</td></tr>
+          <tr><td><code>docs/MULTI_AGENT_MEMORY_SPEC.md</code></td><td>Agent 記憶系統設計</td></tr>
+          <tr><td><code>docs/MULTI_AGENT_OBSERVABILITY_SPEC.md</code></td><td>Agent 可觀測性設計</td></tr>
+          <tr><td><code>docs/POC_TECHNICAL_SPEC.md</code></td><td>密集的工程建構規格（從 codebase 反推的）</td></tr>
+          <tr><td><code>docs/POC_DEPLOYMENT_SPEC.md</code></td><td>部署規格</td></tr>
+          <tr><td><code>docs/SUPERVISOR_CHARTER_AND_DESIGN_BRIEF.md</code></td><td>Supervisor Agent 設計</td></tr>
+        </tbody>
+      </table>
+
+      <h3>層二（Visual）：HTML 可視化文件（docs/*.html）</h3>
+      <table>
+        <thead><tr><th>文件</th><th>內容</th></tr></thead>
+        <tbody>
+          <tr><td><code>docs/PLATFORM_OVERVIEW_2026H2.html</code></td><td>平台全貌概覽（有 .pptx 版本）</td></tr>
+          <tr><td><code>docs/MULTI_AGENT_ARCHITECTURE.html</code></td><td>Multi-Agent 架構圖</td></tr>
+          <tr><td><code>docs/LLM_BAKEOFF_4MODEL.html</code></td><td>4 個模型 bakeoff 測試報告</td></tr>
+          <tr><td><code>docs/LLM_CHANNEL_CONFIG_GUIDE.html</code></td><td>LLM 切換設定說明</td></tr>
+          <tr><td><code>docs/architecture.html</code></td><td>架構視覺化</td></tr>
+          <tr><td><code>docs/deep-dives/langgraph-pipeline-builder.html</code></td><td>LangGraph Pipeline Builder 深度解析</td></tr>
+          <tr><td><code>docs/blocks_overview_eqp08_case.html</code></td><td>Block 使用案例（EQP-08）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>層三：歷史 PRD / SPEC 存檔（docs/history/）</h3>
+      <p>有 <strong>80+ 份</strong>歷史設計文件，追蹤每個開發 Phase（Phase 4 → Phase 12+）：</p>
+      <ul>
+        <li><code>SPEC_pipeline_builder.md</code>、<code>SPEC_pipeline_builder_phase2.md</code>... — Pipeline Builder 各迭代規格</li>
+        <li><code>SPEC_context_engineering.md</code>、<code>SPEC_context_engineering_phase2.md</code> — Context 工程設計</li>
+        <li><code>SPEC_generative_ui_v1.md</code> — Generative UI 設計</li>
+        <li><code>PRODUCT_SPEC.md</code> — 歷史版產品規格（V8/V10 archive 也存在）</li>
+        <li><code>LESSONS_LEARNED_2026_04_30.md</code> — Phase 8 重要教訓記錄</li>
+        <li><code>AIOPS_ROADMAP.md</code> — 發展路線圖</li>
+      </ul>
+
+      <h3>每個子模組也有自己的 SPEC.md</h3>
+      <ul>
+        <li><code>aiops-app/SPEC.md</code> — Frontend 規格</li>
+        <li><code>aiops-contract/SPEC.md</code> — 共用型別（AIOpsReportContract）規格</li>
+        <li><code>fastapi_backend_service/SPEC.md</code> — 舊後端（已退役）規格</li>
+      </ul>
+
+      <div class="callout">
+        <strong>總結：</strong>文件體系相當完整。<code>CLAUDE.md</code> 是所有人（人類 + AI）的行為準則；<code>docs/</code> 裡有功能規格、架構設計、測試報告；<code>docs/history/</code> 是整個開發歷程的決策軌跡，共 80+ 份文件。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q18 ── -->
+  <section class="qa-block" id="q18">
+    <div class="qa-label">
+      <span class="qa-index">Round 18</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>Skill 系統存放的是一組特定 Pipeline（DAG → 多個 Block 組成）。AI Agent Chat 模式似乎也是最終推導出一個可執行的 Pipeline 並給使用者看？<br/>
+      如果是的話，產生一些實際可能產生的 Pipeline，以及他是怎麼儲存的原始資料結構範例。</p>
+    </div>
+    <div class="answer">
+
+      <h2>你的理解正確：兩條路都走向同一份 pipeline_json</h2>
+
+      <div class="arch-box">
+<span class="hl">Chat Agent</span> ← 使用者說話
+  ↓ 自然語言指令
+<span class="hl2">Glass Box Builder</span>（Planner → Builder → Repair → finalize_node）
+  ↓ 產出 PipelineJSON（草稿）
+<span class="hl3">Canvas 畫布</span> — 使用者看到節點圖、可以拖拉修改
+  ↓ 使用者點「Save」
+<span class="hl">pb_pipelines</span> 表（pipeline_json TEXT 欄）
+  ↓ 可選：發布為 Skill
+<span class="hl">skills_v2</span> 表（pipeline_id FK + pipeline_nodes 快照）
+      </div>
+
+      <div class="callout">
+        <strong>關鍵設計：</strong>Builder finalize_node 不會自動存到 DB。它只把 pipeline 傳回前端 canvas 作為草稿（<code>final_pipeline: pipeline.model_dump()</code>），使用者確認後才由前端的 save-pipeline 端點寫入。DB 永遠是人工確認的結果，不是 AI 直接寫的。
+      </div>
+
+      <hr/>
+
+      <h2>原始資料結構：PipelineJSON</h2>
+      <p>存在 <code>pb_pipelines.pipeline_json</code> 欄位（TEXT），對應 TypeScript 的 <code>PipelineJSON</code> 型別：</p>
+
+      <pre><code>{
+  "version": "1.0.0",
+  "name": "...",
+  "inputs": [                        // pipeline 層級的輸入宣告（可選）
+    { "name": "tool_id", "type": "string", "required": true, "example": "EQP-03" }
+  ],
+  "nodes": [                         // Block 節點陣列
+    {
+      "id": "n1",                    // 節點 ID（DAG 拓撲用）
+      "block_id": "block_filter",    // 對應 BUILTIN_EXECUTORS 的 key
+      "block_version": "1.0",
+      "position": { "x": 300, "y": 100 },  // 畫布座標
+      "params": { ... },             // block 的執行參數
+      "display_label": "篩選 OOC"   // 畫布顯示名稱（可選）
+    }
+  ],
+  "edges": [                         // 有向邊（資料流）
+    {
+      "id": "e1",
+      "from": { "node": "n1", "port": "data" },
+      "to":   { "node": "n2", "port": "data" }
+    }
+  ]
+}</code></pre>
+
+      <hr/>
+
+      <h2>範例 A：OOC 5取2 全廠巡檢（patrol Skill）</h2>
+      <p>排程每小時掃所有機台，最近 5 筆 SPC 中 ≥2 筆 OOC 就觸發 Alarm。</p>
+
+      <pre><code>// pb_pipelines.pipeline_json
+{
+  "version": "1.0.0",
+  "name": "OOC 5取2 全廠巡檢",
+  "inputs": [
+    { "name": "tool_id", "type": "string", "required": false }
+  ],
+  "nodes": [
+    {
+      "id": "n1", "block_id": "block_process_history",
+      "params": { "tool_id": "$tool_id", "limit": 5 },
+      "position": { "x": 100, "y": 100 }
+    },
+    {
+      "id": "n2", "block_id": "block_filter",
+      "params": { "column": "spc_status", "operator": "=", "value": "OOC" },
+      "position": { "x": 300, "y": 100 }
+    },
+    {
+      "id": "n3", "block_id": "block_step_check",
+      "params": { "aggregation": "count", "operator": ">=", "threshold": 2 },
+      "position": { "x": 500, "y": 100 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": {"node":"n1","port":"data"}, "to": {"node":"n2","port":"data"} },
+    { "id": "e2", "from": {"node":"n2","port":"data"}, "to": {"node":"n3","port":"data"} }
+  ]
+}
+
+// skills_v2 row
+{
+  "slug": "p-ooc52",
+  "name": "OOC 5取2 全廠巡檢",
+  "pipeline_id": 12,
+  "has_alarm": true,           // n3 是 block_step_check → isVerdict=true
+  "role": "patrol",
+  "trigger_config": "{\"kind\":\"schedule\",\"schedule\":\"0 * * * *\",\"target\":\"all\"}",
+  "alarm_gate": "5取2達標 → alarm",
+  "status": "active"
+}</code></pre>
+
+      <h2>範例 B：EQP-03 APC 趨勢折線圖（tool Skill，ad-hoc 分析）</h2>
+      <p>工程師 Chat 說「幫我看 EQP-03 的 APC 補償趨勢」→ Agent 建構後顯示折線圖。</p>
+
+      <pre><code>// pb_pipelines.pipeline_json
+{
+  "version": "1.0.0",
+  "name": "EQP-03 APC 趨勢分析",
+  "inputs": [
+    { "name": "tool_id", "type": "string", "required": true, "example": "EQP-03" }
+  ],
+  "nodes": [
+    {
+      "id": "n1", "block_id": "block_process_history",
+      "params": { "tool_id": "$tool_id", "limit": 50 },
+      "position": { "x": 100, "y": 100 }
+    },
+    {
+      "id": "n2", "block_id": "block_filter",
+      "params": { "column": "step", "operator": "=", "value": "APC_STEP_03" },
+      "position": { "x": 300, "y": 100 }
+    },
+    {
+      "id": "n3", "block_id": "block_time_bucket",
+      "params": {
+        "time_column": "eventTime", "bucket": "1h",
+        "agg": "mean", "value_column": "apc_value"
+      },
+      "position": { "x": 500, "y": 100 }
+    },
+    {
+      "id": "n4", "block_id": "block_line_chart",
+      "params": { "x": "eventTime", "y": "apc_value", "title": "APC 補償趨勢" },
+      "position": { "x": 700, "y": 100 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": {"node":"n1","port":"data"}, "to": {"node":"n2","port":"data"} },
+    { "id": "e2", "from": {"node":"n2","port":"data"}, "to": {"node":"n3","port":"data"} },
+    { "id": "e3", "from": {"node":"n3","port":"data"}, "to": {"node":"n4","port":"data"} }
+  ]
+}</code></pre>
+
+      <h2>範例 C：多維診斷（event-driven patrol + 多分支）</h2>
+      <p>收到 OOC 事件後，同時從 Tool / Lot / APC 三個維度檢查。</p>
+
+      <pre><code>// pb_pipelines.pipeline_json（分支 DAG）
+{
+  "version": "1.0.0",
+  "name": "OOC 多維診斷",
+  "inputs": [
+    { "name": "tool_id",  "type": "string", "required": true },
+    { "name": "lot_id",   "type": "string", "required": false },
+    { "name": "event_ts", "type": "string", "required": true }
+  ],
+  "nodes": [
+    { "id": "n1", "block_id": "block_process_history",
+      "params": { "tool_id": "$tool_id", "limit": 20 },
+      "position": { "x": 100, "y": 200 } },
+
+    // 分支 A：Tool 維度
+    { "id": "n2", "block_id": "block_filter",
+      "params": { "column": "spc_status", "operator": "=", "value": "OOC" },
+      "position": { "x": 320, "y": 80 } },
+    { "id": "n3", "block_id": "block_step_check",
+      "params": { "aggregation": "count", "operator": ">=", "threshold": 10 },
+      "display_label": "Tool 維度 OOC≥10",
+      "position": { "x": 520, "y": 80 } },
+
+    // 分支 B：Lot 維度
+    { "id": "n4", "block_id": "block_groupby_agg",
+      "params": { "group_by": ["lot_id"], "agg": [{"column":"spc_status","func":"count"}] },
+      "position": { "x": 320, "y": 240 } },
+    { "id": "n5", "block_id": "block_step_check",
+      "params": { "aggregation": "max", "operator": ">=", "threshold": 2 },
+      "display_label": "Lot 維度 max≥2",
+      "position": { "x": 520, "y": 240 } },
+
+    // 彙總圖（任一維度結果顯示）
+    { "id": "n6", "block_id": "block_bar_chart",
+      "params": { "x": "dimension", "y": "count", "title": "各維度 OOC 次數" },
+      "position": { "x": 720, "y": 160 } }
+  ],
+  "edges": [
+    { "id": "e1", "from": {"node":"n1","port":"data"}, "to": {"node":"n2","port":"data"} },
+    { "id": "e2", "from": {"node":"n1","port":"data"}, "to": {"node":"n4","port":"data"} },
+    { "id": "e3", "from": {"node":"n2","port":"data"}, "to": {"node":"n3","port":"data"} },
+    { "id": "e4", "from": {"node":"n4","port":"data"}, "to": {"node":"n5","port":"data"} },
+    { "id": "e5", "from": {"node":"n1","port":"data"}, "to": {"node":"n6","port":"data"} }
+  ]
+}</code></pre>
+
+      <h3>三個範例對比</h3>
+      <table>
+        <thead><tr><th>範例</th><th>節點數</th><th>有分支？</th><th>skill role</th><th>trigger</th></tr></thead>
+        <tbody>
+          <tr><td>OOC 5取2</td><td>3</td><td>否（線性）</td><td>patrol</td><td>schedule 每 1h</td></tr>
+          <tr><td>APC 趨勢</td><td>4</td><td>否（線性）</td><td>tool</td><td>手動 / Chat</td></tr>
+          <tr><td>多維診斷</td><td>6</td><td>是（fan-out）</td><td>patrol</td><td>event（接上游 OOC alarm）</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>總結：</strong>無論是 Chat Agent 即時建構還是預先儲存為 Skill，最終都是同一份 <code>PipelineJSON</code>（nodes + edges + params）。差別只在：Chat 建完 → 草稿在 canvas → 使用者點 Save → 存進 <code>pb_pipelines</code>；Skill 則再多一步把 pipeline_id 綁進 <code>skills_v2</code>，加上 role / trigger_config / alarm_gate。
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── Q19 ── -->
+  <section class="qa-block" id="q19">
+    <div class="qa-label">
+      <span class="qa-index">Round 19</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>目前來說 MCP 的設計是否只被用來執行 Pipeline 的各種 Block？</p>
+    </div>
+    <div class="answer">
+      <h2>不是，MCP 的用途比這個廣，實際有四個場景</h2>
+
+      <table>
+        <thead><tr><th>場景</th><th>MCP 用途</th><th>跟 Pipeline Block 有關？</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Block executor 內部</strong></td>
+            <td><code>block_process_history</code>、<code>block_mcp_foreach</code> 等 Source block 執行時呼叫 System MCP 取製程資料</td>
+            <td><span class="tag tag-green">是</span></td>
+          </tr>
+          <tr>
+            <td><strong>Chat Agent 直接呼叫</strong></td>
+            <td>使用者問「EQP-03 現在 SPC 狀況」→ Chat Agent 透過 <code>granted_mcps</code> 直接呼叫 System MCP，不建 pipeline</td>
+            <td><span class="tag tag-orange">否（繞過 pipeline）</span></td>
+          </tr>
+          <tr>
+            <td><strong>外部 MCP Server（:8060）</strong></td>
+            <td><code>mcp_pipeline_builder/server.py</code> 讓外部 Claude Desktop / claude.ai 操作平台（建 Skill、設自動化、查 Alarm）</td>
+            <td><span class="tag tag-orange">否（平台管理工具）</span></td>
+          </tr>
+          <tr>
+            <td><strong>UI Handoff MCP（mcp-010/011/012）</strong></td>
+            <td><code>open_lot_trace</code>、<code>open_drill_down</code>、<code>open_topology</code>：呼叫後不查資料，只通知前端開啟對應面板</td>
+            <td><span class="tag tag-orange">否（UI 指令）</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>以實際呼叫量來說：</strong>Pipeline block 執行時透過 Source block 呼叫 MCP 是大宗（每次 pipeline 執行至少觸發一次）。Chat Agent direct 呼叫是次要路徑。MCP 更接近「平台的所有對外通訊介面」，不只是 pipeline 的資料來源。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q20 ── -->
+  <section class="qa-block" id="q20">
+    <div class="qa-label">
+      <span class="qa-index">Round 20</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>給我具備數據的條列與統計——12 個 MCP 各被哪裡使用？</p>
+    </div>
+    <div class="answer">
+      <h2>重要發現：這個專案有兩套不同的 MCP Catalog，之前混在一起說了</h2>
+
+      <h3>Catalog A：<code>aiops-app/data/mcps.json</code>（12 個）— 前端顯示用</h3>
+      <p>這份是 Admin UI 顯示目錄，也是舊 LangGraph system prompt 的 <code>&lt;mcp_catalog&gt;</code> 來源。<strong>Python sidecar 執行端幾乎不直接引用這份。</strong></p>
+
+      <table>
+        <thead><tr><th>使用者</th><th>引用哪些</th><th>目的</th></tr></thead>
+        <tbody>
+          <tr><td><code>aiops-app/src/mcp/catalog.ts</code></td><td>12 個全引用</td><td>前端 Admin UI 顯示</td></tr>
+          <tr><td><code>aiops-contract/tests/</code></td><td>get_dc_timeseries, get_event_log, open_lot_trace</td><td>合約測試</td></tr>
+          <tr><td><code>ontology_simulator/</code></td><td>get_dc_timeseries, get_tools_status</td><td>simulator 路由對應</td></tr>
+          <tr><td>Python sidecar 執行端</td><td><strong>0 個直接引用</strong></td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Catalog B：<code>mcp_definitions</code> PostgreSQL 表 — 實際 Runtime 呼叫的</h3>
+      <p>這才是 block executor 和 Chat Agent 真正呼叫的 MCP，透過 SQL migration 分批 seed：</p>
+
+      <table>
+        <thead><tr><th>MCP 名稱</th><th>Seed 來源</th><th>誰呼叫</th><th>呼叫量</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>get_process_info</code></td>
+            <td>V31/V30/V84（更新 4 次）</td>
+            <td><code>block_process_history</code>、<code>block_mcp_foreach</code>、Chat Agent direct</td>
+            <td><span class="tag tag-green">最高</span>（出現 15+ Python 檔）</td>
+          </tr>
+          <tr>
+            <td><code>list_tools</code></td>
+            <td>早期 baseline</td>
+            <td><code>block_list_objects(kind='tool')</code></td>
+            <td><span class="tag tag-blue">次高</span></td>
+          </tr>
+          <tr>
+            <td><code>list_active_lots</code></td>
+            <td>V17</td>
+            <td><code>block_list_objects(kind='lot')</code></td>
+            <td>中</td>
+          </tr>
+          <tr>
+            <td><code>list_steps</code></td>
+            <td>V17</td>
+            <td><code>block_list_objects(kind='step')</code></td>
+            <td>中</td>
+          </tr>
+          <tr>
+            <td><code>list_apcs</code></td>
+            <td>V17</td>
+            <td><code>block_list_objects(kind='apc')</code></td>
+            <td>中</td>
+          </tr>
+          <tr>
+            <td><code>list_spcs</code></td>
+            <td>V17</td>
+            <td><code>block_list_objects(kind='spc')</code></td>
+            <td>中</td>
+          </tr>
+          <tr>
+            <td><code>rework_request</code></td>
+            <td>V53</td>
+            <td><code>block_mcp_call</code> / Chat Agent</td>
+            <td>低</td>
+          </tr>
+          <tr>
+            <td>UI Handoff 3 個（open_lot_trace 等）</td>
+            <td>V63</td>
+            <td>外部 MCP Server client（Claude Desktop）</td>
+            <td>低（僅開 UI 面板）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Block 層統計</h3>
+      <table>
+        <thead><tr><th>指標</th><th>數字</th></tr></thead>
+        <tbody>
+          <tr><td>總 block .py 檔</td><td><strong>64 個</strong></td></tr>
+          <tr><td>直接呼叫 MCP 的 block 檔</td><td><strong>5 個</strong>（process_history, list_objects, mcp_call, mcp_foreach, mcp_proxy）</td></tr>
+          <tr><td>純 pandas 運算、不碰 MCP 的 block</td><td><strong>59 個</strong></td></tr>
+          <tr><td>每次 pipeline 執行觸發 MCP 次數</td><td><strong>至少 1 次</strong>（Source block 必然觸發）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Chat Agent 層</h3>
+      <table>
+        <thead><tr><th>指標</th><th>數字</th></tr></thead>
+        <tbody>
+          <tr><td>execute_mcp 在 agent_orchestrator_v2/ 出現次數</td><td><strong>18 次</strong>（6 個檔案）</td></tr>
+          <tr><td>Chat Agent 可注入的 System MCP 數</td><td>最多 <strong>12 個</strong>（依 granted_mcps 授權動態載入）</td></tr>
+          <tr><td>外部 MCP Server (mcp_pipeline_builder) 呼叫 execute_mcp 次數</td><td><strong>0 次</strong>（它是 server，不是 client）</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>關鍵：</strong><code>get_process_info</code> 單一 MCP 覆蓋了 mcps.json 裡 get_dc_timeseries、get_spc_data、get_event_log 等多個分散 MCP 的功能，是架構演進後的整合結果。mcps.json 的 12 個是舊前端目錄，runtime 真正呼叫的是 <code>mcp_definitions</code> 表裡那幾個。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q21 ── -->
+  <section class="qa-block" id="q21">
+    <div class="qa-label">
+      <span class="qa-index">Round 21</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>這問題主要應該是擔心安全性、安全上的破壞性對嗎？<br/>
+      在生成 SQL 語法後，那它的 Runtime 如何控管？有採用 Sandbox 設計嗎？<br/><br/>
+      但我猜測主要動作應該都是在 DB 外建立（比如 pipeline）以及查詢，不會有破壞的 SQL，就算不小心幻覺產生，我們也可以加上 rule-based 在每一個 MCP 內去過濾控制？</p>
+    </div>
+    <div class="answer">
+      <h2>你的判斷基本正確，但原因比你想的更強</h2>
+
+      <h3>1. 這個系統根本不產生 SQL（核心假設正確）</h3>
+      <p>LLM 產生的是 <strong>PipelineJSON（nodes + edges + params）</strong>，不是 SQL。執行走 Block DAG + pandas。整個分析路徑跟資料庫完全無關：</p>
+      <pre><code>LLM → PipelineJSON → executor.py → block.execute() → httpx 打 HTTP → ontology simulator</code></pre>
+      <p>MCP 呼叫走的是 <code>endpoint_url</code>（HTTP GET/POST），不是 DB query。<code>mcp_call.py</code> 強制檢查 method 只允許 <code>GET</code> 或 <code>POST</code>，其他直接拋 <code>BlockExecutionError</code>。</p>
+
+      <h3>2. Sandbox 是 Mock，確實沒上線</h3>
+      <p><code>/internal/sandbox/run</code> 回傳 mock response（"Phase 4 mock — real sandbox wires in Phase 5"），現在根本跑不到。</p>
+
+      <h3>3. 你說的 Rule-based 控管，這個專案已有——但在呼叫前，不在 MCP 內部</h3>
+      <p><code>helpers.py</code> 在 Chat Agent 呼叫 MCP 前有幾層 gate：</p>
+      <table>
+        <thead><tr><th>控管</th><th>做法</th></tr></thead>
+        <tbody>
+          <tr><td>MCP 不存在</td><td>立即回錯，不 retry</td></tr>
+          <tr><td>必填參數缺漏</td><td><code>⛔ STOP — 禁止再次呼叫 execute_mcp</code>，強制 LLM 先問 user</td></tr>
+          <tr><td>method 不是 GET/POST</td><td><code>BlockExecutionError: unsupported method</code></td></tr>
+          <tr><td>寫入操作</td><td>不透過 MCP 執行，改走確認卡（handoff）讓 user 在瀏覽器確認</td></tr>
+        </tbody>
+      </table>
+
+      <h3>4. 為什麼不是靠過濾擋 SQL，而是架構上就不存在這條路</h3>
+      <p>真正的 DB 操作只有 <strong>Java backend 自己做</strong>（JPA/JDBC），LLM 完全碰不到那條路。破壞性 SQL 的問題在這個架構裡根本不存在，因為：</p>
+      <ul>
+        <li>LLM 只產 pipeline JSON 或填 MCP HTTP 參數</li>
+        <li>sidecar 不連 PostgreSQL（<code>_sidecar_deps.py</code> raises <code>NotImplementedError</code>）</li>
+        <li>所有 DB 操作走 <code>JavaAPIClient → /internal/*</code>，不開放給 LLM 直接操控</li>
+      </ul>
+
+      <div class="callout warn">
+        <strong>結論：</strong>你的推理「在 MCP 內加 rule-based 過濾」是有意義的補強方向，但這個架構的更強保障是：LLM 從設計上就<strong>沒有機會產生 SQL</strong>。Rule-based 過濾是防禦深度（defense in depth），不是主要防線。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q22 ── -->
+  <section class="qa-block" id="q22">
+    <div class="qa-label">
+      <span class="qa-index">Round 22</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>你說法也正確，但更細緻一點——你不能確保 MCP 裡面有沒有破壞的 SQL，所以我的想法依然有效，而是延伸到 MCP 內的設計，對嗎？</p>
+    </div>
+    <div class="answer">
+      <h2>對，你的推理是正確的延伸</h2>
+
+      <p>架構層面確保了 <strong>LLM 不直接碰 DB</strong>，但 MCP 的 <code>endpoint_url</code> 背後是什麼，sidecar 完全不知道也不管。如果某個 MCP 的 HTTP endpoint 內部實作有破壞性 SQL，sidecar 照樣會打過去。</p>
+
+      <h3>實際的安全邊界</h3>
+      <div class="arch-box">
+<span class="hl">LLM</span> → MCP 參數填寫
+         ↓ （sidecar 在這層有 gate：參數驗證 / STOP 規則 / method 白名單）
+<span class="hl2">MCP endpoint 內部</span>（sidecar 完全信任，黑盒）
+         ↓
+<span class="hl3">那裡的 SQL 是否安全</span> → 由 MCP 自己負責，sidecar 不知道
+      </div>
+
+      <h3>你說的在 MCP 內部加 Rule-based 控管——就是在補這個 gap</h3>
+      <p>在 MCP endpoint 的實作層做：</p>
+      <ul>
+        <li><strong>參數白名單</strong>：只允許特定 column / table，其他拒絕</li>
+        <li><strong>只允許 SELECT</strong>，不允許 INSERT / UPDATE / DELETE / DROP</li>
+        <li><strong>參數型別 / 範圍驗證</strong>：防 injection（特殊字元、巢狀 query）</li>
+        <li><strong>Row-level security</strong>：只能查自己有權限的資料</li>
+      </ul>
+
+      <h3>這個專案目前的狀況</h3>
+      <table>
+        <thead><tr><th>層面</th><th>現狀</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>sidecar 對 MCP 內部 SQL 的控管</td>
+            <td><span class="tag tag-orange">無</span> — <code>api_config</code> 只存 endpoint URL，實作完全交給 MCP 開發者</td>
+          </tr>
+          <tr>
+            <td>MCP method 白名單</td>
+            <td><span class="tag tag-green">有</span> — 只允許 GET / POST，其他拋錯</td>
+          </tr>
+          <tr>
+            <td>MCP 參數驗證（呼叫前）</td>
+            <td><span class="tag tag-green">有</span> — helpers.py 的 STOP gate</td>
+          </tr>
+          <tr>
+            <td>MCP 內部 SQL 是否安全</td>
+            <td><span class="tag tag-orange">未強制規範</span> — 取決於各 MCP endpoint 開發者</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>結論：</strong>你的判斷正確。這個架構的安全邊界停在「sidecar 呼叫 MCP」這一層，MCP 內部的 SQL 安全是目前的真實缺口。在每個 MCP endpoint 內部加 rule-based 過濾（SELECT-only、參數白名單、injection 防護）是補強這個 gap 的正確方向，是 defense in depth 的第二道防線。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q23 ── -->
+  <section class="qa-block" id="q23">
+    <div class="qa-label">
+      <span class="qa-index">Round 23</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>到底有多少 MCP？分別做什麼？這些 MCP 都被誰採用？</p>
+    </div>
+    <div class="answer">
+      <h2>兩套 MCP Catalog 要區分清楚</h2>
+
+      <div class="callout warn">
+        <strong>關鍵前提：</strong>專案裡同時存在兩套 MCP 目錄。<code>aiops-app/data/mcps.json</code> 是前端顯示用（舊 UI catalog）；<strong>實際 Runtime 呼叫的</strong>是 PostgreSQL <code>mcp_definitions</code> 表，由 Flyway migrations seed 進去。下面只談後者。
+      </div>
+
+      <h2>Runtime MCP 清單（來自 Flyway migrations）</h2>
+
+      <table>
+        <thead>
+          <tr><th>MCP 名稱</th><th>Migration</th><th>HTTP</th><th>端點</th><th>用途</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>get_process_info</code></td>
+            <td>V30/V31/V84（更新 4 次）</td>
+            <td>GET</td>
+            <td><code>/api/v1/process/info</code></td>
+            <td>取單台機台/lot/step 的完整製程歷史事件（events），是所有 Source block 的核心資料源。最高頻使用。</td>
+          </tr>
+          <tr>
+            <td><code>list_active_lots</code></td>
+            <td>V17__list_mcps.sql</td>
+            <td>GET</td>
+            <td><code>/api/v1/lots?status=active</code></td>
+            <td>列出 Waiting/Processing 狀態的 lot 清單。供 <code>block_list_objects(kind='lot')</code> 使用。</td>
+          </tr>
+          <tr>
+            <td><code>list_steps</code></td>
+            <td>V17__list_mcps.sql</td>
+            <td>GET</td>
+            <td><code>/api/v1/list-steps</code></td>
+            <td>列出全廠所有製程站點（STEP_001…NNN）。供 <code>block_list_objects(kind='step')</code> 使用。</td>
+          </tr>
+          <tr>
+            <td><code>list_apcs</code></td>
+            <td>V17__list_mcps.sql</td>
+            <td>GET</td>
+            <td><code>/api/v1/list-apcs</code></td>
+            <td>列出 APC 配置清單（設備補償參數目錄）。供 <code>block_list_objects(kind='apc')</code> 使用。</td>
+          </tr>
+          <tr>
+            <td><code>list_spcs</code></td>
+            <td>V17__list_mcps.sql</td>
+            <td>GET</td>
+            <td><code>/api/v1/list-spcs</code></td>
+            <td>列出 SPC chart 種類（xbar/r/s/p/c）。供 <code>block_list_objects(kind='spc')</code> 使用。</td>
+          </tr>
+          <tr>
+            <td><code>rework_request</code></td>
+            <td>V53__rework_mcp_and_block.sql</td>
+            <td>POST</td>
+            <td><code>/api/v1/rework_request</code></td>
+            <td>查詢特定 lot 在指定 step 的 rework 紀錄。低頻使用，由 <code>block_rework_request</code> 或 <code>block_mcp_call</code> 呼叫。</td>
+          </tr>
+          <tr>
+            <td>UI Handoff 3 個<br/><code>open_lot_trace</code><br/><code>open_drill_down</code><br/><code>open_topology</code></td>
+            <td>V63__ui_handoff_mcps.sql</td>
+            <td>POST</td>
+            <td>（通知前端開面板，不查資料）</td>
+            <td>呼叫後不回傳資料，只向前端 WebSocket 推送「開啟對應 UI 面板」指令。<br/>由 Chat Agent Direct Call 或外部 MCP Server 呼叫，不進 pipeline。</td>
+          </tr>
+          <tr>
+            <td>Custom MCP<br/>（動態，用戶建立）</td>
+            <td>—（由 Admin UI 寫入）</td>
+            <td>任意</td>
+            <td>用戶自訂</td>
+            <td>Admin 建立後可自動衍生對應 Block（<code>source=mcp_auto</code>），也可被 <code>block_mcp_call</code> 直接呼叫。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>誰呼叫哪個 MCP（採用者統計）</h2>
+
+      <table>
+        <thead>
+          <tr><th>採用者</th><th>呼叫哪些 MCP</th><th>呼叫方式</th><th>場景</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>block_process_history</code></td>
+            <td><code>get_process_info</code></td>
+            <td>直接 HTTP（<code>httpx</code>，不走 MCP 體系）</td>
+            <td>Pipeline 執行時的主要資料取得，每次執行必然觸發</td>
+          </tr>
+          <tr>
+            <td><code>block_list_objects</code></td>
+            <td><code>list_active_lots</code>、<code>list_steps</code>、<code>list_apcs</code>、<code>list_spcs</code>（依 kind 參數選一）</td>
+            <td>透過 <code>JavaAPIClient.get_mcp_by_name()</code> → 拿到 endpoint_url → httpx</td>
+            <td>需要列舉設備清單再 foreach 查詢時（全廠掃描）</td>
+          </tr>
+          <tr>
+            <td><code>block_rework_request</code></td>
+            <td><code>rework_request</code></td>
+            <td>直接 HTTP POST</td>
+            <td>查 lot rework 紀錄（低頻）</td>
+          </tr>
+          <tr>
+            <td><code>block_mcp_call</code></td>
+            <td><strong>任意 MCP</strong>（params.mcp_name 指定）</td>
+            <td><code>JavaAPIClient.get_mcp_by_name()</code> → 動態解析 endpoint → httpx</td>
+            <td>通用 MCP dispatcher，可呼叫 Custom MCP 或任何 System MCP</td>
+          </tr>
+          <tr>
+            <td><code>block_mcp_foreach</code></td>
+            <td><strong>任意 MCP</strong>（同上）</td>
+            <td>同 mcp_call，但對 DataFrame 每一列並發呼叫（最多 5 並發）</td>
+            <td>全廠 N 台機台各查一次，或多 lot 批次查詢</td>
+          </tr>
+          <tr>
+            <td>Chat Agent（Direct Call）</td>
+            <td>所有 System MCP（依 <code>granted_mcps</code> 授權）</td>
+            <td><code>tool_dispatcher.py</code> 的 <code>execute_mcp</code> tool</td>
+            <td>用戶問即時狀況，不建 pipeline，直接查</td>
+          </tr>
+          <tr>
+            <td>外部 MCP Server（:8060）</td>
+            <td>UI Handoff 3 個</td>
+            <td>呼叫內部 Java API，通知前端開面板</td>
+            <td>Claude Desktop / claude.ai 操作平台時開視覺面板</td>
+          </tr>
+          <tr>
+            <td><code>McpProxyBlockExecutor</code>（V54 auto-gen）</td>
+            <td>對應的 Custom MCP（由 <code>mcp_name</code> 欄位指定）</td>
+            <td>同 mcp_call 路徑</td>
+            <td>Admin 勾選「連動 Block」後自動生成的 block，Pipeline Builder 可直接拖拉</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>架構圖：MCP 呼叫路徑全景</h3>
+      <div class="arch-box">
+<span class="hl">Pipeline 執行層</span>
+  ├── <span class="hl3">block_process_history</span> ──直接 httpx──▶ <span class="hl2">ontology_simulator :8012</span>
+  ├── <span class="hl3">block_list_objects</span>  ──JavaClient──▶ Java /internal/mcp-definitions ──▶ endpoint
+  ├── <span class="hl3">block_mcp_call</span>      ──JavaClient──▶ Java /internal/mcp-definitions ──▶ 任意 endpoint
+  ├── <span class="hl3">block_mcp_foreach</span>   ──同上，並發 5──▶ 任意 endpoint
+  └── <span class="hl3">McpProxyBlockExecutor</span> ──同 mcp_call path──▶ Custom MCP endpoint
+
+<span class="hl">Chat Agent 層</span>
+  └── tool_dispatcher.execute_mcp ──JavaClient──▶ Java /internal/mcp-definitions ──▶ endpoint
+      (繞過 Pipeline，直接單次查詢)
+
+<span class="hl">外部入口</span>
+  └── MCP Server :8060 ──▶ Java + Sidecar（open_lot_trace 等推 UI）
+      </div>
+
+      <div class="callout">
+        <strong>一個容易混淆的點：</strong><code>block_process_history</code> 雖然對應 MCP <code>get_process_info</code>，但它<strong>不透過 MCP 體系</strong>（不查 <code>mcp_definitions</code>）。它直接把 <code>ONTOLOGY_SIM_URL</code> 環境變數拼出 endpoint 打過去，是寫死在 block 的快速路徑。其他 block（mcp_call、list_objects）才走「從 Java 動態查 endpoint」的標準 MCP 路徑。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q24 ── -->
+  <section class="qa-block" id="q24">
+    <div class="qa-label">
+      <span class="qa-index">Round 24</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>Block 角度：有多少個？實際執行上對應的是 code 還是 MCP？（對應前面 MCP 整理）</p>
+    </div>
+    <div class="answer">
+      <h2>48 個 Builtin Block + N 個動態 MCP Proxy Block</h2>
+
+      <p>來源：<code>python_ai_sidecar/pipeline_builder/blocks/__init__.py</code> 的 <code>BUILTIN_EXECUTORS</code> dict。</p>
+
+      <h3>執行方式快速判別：3 種</h3>
+      <table>
+        <thead><tr><th>類型</th><th>判別條件</th><th>執行者</th><th>外部呼叫？</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="tag tag-blue">Pure Python</span></td>
+            <td>在 BUILTIN_EXECUTORS，execute() 只操作 DataFrame</td>
+            <td>各自的 <code>BlockExecutor</code> subclass（pandas/numpy/scipy）</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-orange">MCP-backed Builtin</span></td>
+            <td>在 BUILTIN_EXECUTORS，但 execute() 發出 HTTP 請求</td>
+            <td>同上，但內部呼叫 httpx 打 ontology_simulator 或 mcp_definitions</td>
+            <td>是（HTTP）</td>
+          </tr>
+          <tr>
+            <td><span class="tag tag-purple">MCP Proxy</span></td>
+            <td><code>implementation.type == "mcp_proxy"</code>（來自 DB，不在 BUILTIN_EXECUTORS）</td>
+            <td><code>McpProxyBlockExecutor</code>（走 mcp_call 路徑）</td>
+            <td>是（HTTP，動態查 endpoint）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>完整 Block 分類表（48 Builtin）</h3>
+
+      <h4>Source — 對外取資料（MCP-backed，4 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>執行方式</th><th>對應哪個 MCP</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_process_history</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td><code>get_process_info</code>（直接 HTTP，不走 mcp_definitions 查詢）</td></tr>
+          <tr><td><code>block_list_objects</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td>依 <code>kind</code> 參數選：<code>list_active_lots</code> / <code>list_steps</code> / <code>list_apcs</code> / <code>list_spcs</code></td></tr>
+          <tr><td><code>block_rework_request</code></td><td><span class="tag tag-orange">MCP-backed</span></td><td><code>rework_request</code>（直接 POST）</td></tr>
+          <tr><td><code>block_mcp_call</code></td><td><span class="tag tag-orange">MCP-backed（通用）</span></td><td>任意 MCP（params.mcp_name 動態指定）</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Fan-out — 批量呼叫 MCP（MCP-backed，1 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>執行方式</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_mcp_foreach</code></td><td><span class="tag tag-orange">MCP-backed（並發）</span></td><td>對 DataFrame 每一列各呼叫一次 MCP，最多 5 並發。用於「N 台機台各查一次」場景。</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Transform — 純 pandas 操作（Pure Python，13 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>pandas 操作</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_filter</code></td><td>boolean mask，支援多條件 AND/OR，支援 nested path</td></tr>
+          <tr><td><code>block_find</code></td><td>搜尋行，回傳第一筆或全部符合</td></tr>
+          <tr><td><code>block_join</code></td><td><code>pd.merge()</code> 兩個 DataFrame</td></tr>
+          <tr><td><code>block_groupby_agg</code></td><td><code>df.groupby().agg()</code> 分組聚合</td></tr>
+          <tr><td><code>block_shift_lag</code></td><td><code>df.shift()</code> 時序偏移</td></tr>
+          <tr><td><code>block_rolling_window</code></td><td><code>df.rolling()</code> 滾動統計</td></tr>
+          <tr><td><code>block_select</code></td><td>欄位選取 / rename / reorder</td></tr>
+          <tr><td><code>block_pluck</code></td><td>從 nested dict 列中提取指定 key</td></tr>
+          <tr><td><code>block_unnest</code></td><td><code>df.explode()</code> 展開 list 欄位</td></tr>
+          <tr><td><code>block_unpivot</code></td><td><code>df.melt()</code> 寬轉長</td></tr>
+          <tr><td><code>block_union</code></td><td><code>pd.concat()</code> 合併多個輸入</td></tr>
+          <tr><td><code>block_sort</code></td><td><code>df.sort_values()</code></td></tr>
+          <tr><td><code>block_time_bucket</code></td><td><code>df.resample()</code> 時間桶聚合</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Rules / Detection — 純 Python 邏輯（Pure Python，7 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>功能</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_step_check</code></td><td>聚合 → scalar → 比門檻 → <code>{pass: bool, value, note}</code>。Auto Patrol 必備終端。</td></tr>
+          <tr><td><code>block_threshold</code></td><td>對每列標記是否超出上/下限，輸出 <code>is_violation: bool</code> 欄位</td></tr>
+          <tr><td><code>block_consecutive_rule</code></td><td>連續 N 點超限（WECO Rule 1 變形）</td></tr>
+          <tr><td><code>block_delta</code></td><td>計算相鄰兩點差值（diff）</td></tr>
+          <tr><td><code>block_streak</code></td><td>連續同向趨勢計數</td></tr>
+          <tr><td><code>block_weco_rules</code></td><td>完整 WECO R1–R8 規則判斷，輸出每條規則的 violation flag</td></tr>
+          <tr><td><code>block_any_trigger</code></td><td>對多個 boolean 欄位做 OR，只要有一個為 true 就觸發</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Statistical — scipy + pandas（Pure Python，7 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>功能</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_linear_regression</code></td><td>scipy linregress，輸出斜率/截距/R²</td></tr>
+          <tr><td><code>block_histogram</code></td><td>numpy histogram，輸出 bin 分佈 DataFrame</td></tr>
+          <tr><td><code>block_cpk</code></td><td>製程能力指數 Cp/Cpk 計算</td></tr>
+          <tr><td><code>block_correlation</code></td><td>pearson / spearman 相關係數矩陣</td></tr>
+          <tr><td><code>block_hypothesis_test</code></td><td>t-test / Mann-Whitney U 等假設檢定</td></tr>
+          <tr><td><code>block_ewma</code></td><td>指數加權移動平均（EWMA 管制圖用）</td></tr>
+          <tr><td><code>block_ewma_cusum</code></td><td>EWMA + CUSUM 複合偵測</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Charts / Visualization — 輸出 ChartDSL（Pure Python，22 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>圖表類型</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_line_chart</code></td><td>折線圖（SPC 值 vs 時間）</td></tr>
+          <tr><td><code>block_bar_chart</code></td><td>長條圖</td></tr>
+          <tr><td><code>block_scatter_chart</code></td><td>散點圖</td></tr>
+          <tr><td><code>block_box_plot</code></td><td>箱形圖（分佈比較）</td></tr>
+          <tr><td><code>block_splom</code></td><td>散點矩陣（Scatter Plot Matrix）</td></tr>
+          <tr><td><code>block_histogram_chart</code></td><td>直方圖（視覺版）</td></tr>
+          <tr><td><code>block_xbar_r</code></td><td>X-bar / R 管制圖（含 WECO zones）</td></tr>
+          <tr><td><code>block_imr</code></td><td>I-MR 個別值 / 移動極差管制圖</td></tr>
+          <tr><td><code>block_pareto</code></td><td>柏拉圖（80/20 分析）</td></tr>
+          <tr><td><code>block_variability_gauge</code></td><td>變異量表（gauge chart 類）</td></tr>
+          <tr><td><code>block_parallel_coords</code></td><td>平行座標圖（多維比較）</td></tr>
+          <tr><td><code>block_probability_plot</code></td><td>常態機率圖（Q-Q plot）</td></tr>
+          <tr><td><code>block_heatmap_dendro</code></td><td>熱力圖 + 樹狀圖（聚類分析）</td></tr>
+          <tr><td><code>block_wafer_heatmap</code></td><td>晶圓熱力圖（半導體專用）</td></tr>
+          <tr><td><code>block_defect_stack</code></td><td>缺陷堆疊圖</td></tr>
+          <tr><td><code>block_spatial_pareto</code></td><td>空間柏拉圖</td></tr>
+          <tr><td><code>block_trend_wafer_maps</code></td><td>晶圓 Trend 地圖序列</td></tr>
+          <tr><td><code>block_spc_long_form</code></td><td>SPC 長格式圖（多 chart 疊放）</td></tr>
+          <tr><td><code>block_spc_panel</code></td><td>SPC 面板圖（Dashboard 式多格）</td></tr>
+          <tr><td><code>block_apc_long_form</code></td><td>APC 補償值趨勢長格式</td></tr>
+          <tr><td><code>block_apc_panel</code></td><td>APC 面板圖</td></tr>
+          <tr><td><code>block_chart</code></td><td>通用 chart（動態決定類型）</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Utilities（Pure Python，4 個）</h4>
+      <table>
+        <thead><tr><th>Block</th><th>功能</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_count_rows</code></td><td>輸出 DataFrame 的列數（scalar）</td></tr>
+          <tr><td><code>block_compute</code></td><td>新增計算欄位（四則運算 / 邏輯表達式）</td></tr>
+          <tr><td><code>block_alert</code></td><td>直接產生 alert 訊息輸出（不依賴 step_check）</td></tr>
+          <tr><td><code>block_data_view</code></td><td>輸出 DataFrame 的表格視覺（debug / 展示用）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>數字統計</h3>
+      <table>
+        <thead><tr><th>類別</th><th>數量</th><th>執行方式</th></tr></thead>
+        <tbody>
+          <tr><td>Source / Fan-out（呼叫 MCP）</td><td><strong>5 個</strong></td><td><span class="tag tag-orange">MCP-backed</span></td></tr>
+          <tr><td>Transform / Rules / Statistical / Utils / Charts</td><td><strong>43 個</strong></td><td><span class="tag tag-blue">Pure Python</span></td></tr>
+          <tr><td>Auto-generated MCP Proxy（V54 機制）</td><td><strong>N 個</strong>（動態，Admin 建立）</td><td><span class="tag tag-purple">MCP Proxy</span></td></tr>
+          <tr><td><strong>總 Builtin</strong></td><td><strong>48 個</strong></td><td>—</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>關鍵結論：</strong>48 個 Builtin Block 中，<strong>43 個完全不碰 MCP</strong>，純 pandas/scipy/python 運算。只有 5 個 Source/Fan-out block 對外發 HTTP 請求（4 個是呼叫 MCP endpoint，1 個是通用 dispatcher）。DAG 的「智慧」在於這 5 個取資料的 block + 43 個純運算 block 組合出的分析邏輯。
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Q25 ── -->
+  <section class="qa-block" id="q25">
+    <div class="qa-label">
+      <span class="qa-index">Round 25</span>
+      <div class="qa-divider"></div>
+    </div>
+    <div class="question">
+      <p>舉一個完整例子：這個 Pipeline 實際上一路執行會如何？</p>
+    </div>
+    <div class="answer">
+      <h2>完整範例：「OOC 5取2 全廠巡檢」Patrol Skill 一路執行到底</h2>
+
+      <p>場景：每小時排程自動執行，掃描全廠機台，<strong>最近 5 筆製程記錄中 ≥ 2 筆 OOC 就觸發 Alarm</strong>。</p>
+
+      <h3>Pipeline 結構（4 個 node，3 條 edge）</h3>
+      <div class="arch-box">
+<span class="hl">n1: block_list_objects</span> (kind='tool')
+      ↓ DataFrame: [{toolID:'EQP-01'},{toolID:'EQP-02'},...,{toolID:'EQP-20'}]
+<span class="hl">n2: block_mcp_foreach</span> (mcp_name='get_process_info', args_template={toolID:'$toolID', limit:5})
+      ↓ DataFrame: 100 rows × (toolID, eventTime, spc_status, step, ...)
+<span class="hl">n3: block_filter</span> (column='spc_status', operator='=', value='OOC')
+      ↓ DataFrame: 只留 OOC 的行（假設 12 rows）
+<span class="hl">n4: block_step_check</span> (aggregation='count', operator='>=', threshold=2)
+      ↓ {pass: true, value: 12, note: 'count=12 >= 2'}
+      </div>
+
+      <hr/>
+
+      <h2>Phase 0：Skill 被觸發</h2>
+
+      <pre><code># java-scheduler 每小時觸發
+# POST /internal/skills/p-ooc52/run
+# Java backend 找到 skill → 取出 pipeline_json → 呼叫 sidecar
+
+# sidecar 接收端：
+POST /internal/pipeline/execute
+{
+  "pipeline": { nodes: [...], edges: [...] },
+  "params": {},
+  "context": { "skill_slug": "p-ooc52", "trigger": "schedule" }
+}</code></pre>
+
+      <hr/>
+
+      <h2>Phase 1：executor.py 建 DAG 拓撲排序</h2>
+
+      <pre><code># python_ai_sidecar/pipeline_builder/executor.py
+
+# Step 1: 計算每個 node 的 in-degree
+in_degree = { 'n1': 0, 'n2': 1, 'n3': 1, 'n4': 1 }
+
+# Step 2: 從 in_degree==0 的 node 開始（只有 n1）
+queue = deque(['n1'])
+outputs = {}
+
+# 拓撲排序執行順序：n1 → n2 → n3 → n4</code></pre>
+
+      <hr/>
+
+      <h2>Phase 2：n1 執行 — block_list_objects</h2>
+
+      <pre><code># blocks/list_objects.py → execute()
+# 1. 查 mcp_definitions 取得 list_tools MCP 的 endpoint
+mcp = await java_client.get_mcp_by_name("list_tools")
+url = mcp["api_config"]["endpoint_url"]
+# → "http://localhost:8012/api/v1/tools"
+
+# 2. 發 HTTP GET
+resp = await httpx.get(url)
+# 回傳：
+# { "tools": [{"toolID":"EQP-01","status":"Busy"},{"toolID":"EQP-02","status":"Idle"}, ...] }
+
+# 3. 展平成 DataFrame
+outputs['n1'] = {
+  "data": pd.DataFrame([
+    {"toolID": "EQP-01", "status": "Busy"},
+    {"toolID": "EQP-02", "status": "Idle"},
+    # ... 共 20 台
+  ])
+}</code></pre>
+
+      <hr/>
+
+      <h2>Phase 3：n2 執行 — block_mcp_foreach（最重要的步驟）</h2>
+
+      <pre><code># blocks/mcp_foreach.py → execute()
+df = outputs['n1']['data']   # 20 台機台清單
+mcp_name = "get_process_info"
+args_template = {"toolID": "$toolID", "limit": 5}
+
+# 查 mcp_definitions 取得 get_process_info 的 endpoint
+mcp = await java_client.get_mcp_by_name("get_process_info")
+url = mcp["api_config"]["endpoint_url"]
+# → "http://localhost:8012/api/v1/process/info"
+
+# 對每一列 row 替換 template 變數並建立 coroutine
+semaphore = asyncio.Semaphore(5)   # 最多 5 並發
+
+async def _call_one(row):
+    args = {"toolID": row["toolID"], "limit": 5}  # $toolID → "EQP-01"
+    async with semaphore:
+        resp = await httpx.get(url, params=args)
+    return row, resp.json()
+
+# 並發送出（20 台 × 1 次，分 4 批，每批 5 個）
+# ontology_simulator 回傳每台最近 5 筆事件：
+# EQP-01: [{eventTime:'2026-07-16T08:00', spc_status:'OOC', step:'STK_01'}, ...]
+# EQP-02: [{eventTime:'2026-07-16T08:01', spc_status:'PASS', step:'STK_01'}, ...]
+# ...
+
+# 合併：把每台的 events 攤平後 concat
+merged = pd.concat([
+    _flatten_and_tag(row, resp_events)
+    for row, resp_events in results
+])
+# merged: 100 rows × cols (toolID, eventTime, spc_status, step, ...)
+
+outputs['n2'] = {"data": merged}</code></pre>
+
+      <div class="callout">
+        <strong>關鍵細節：</strong>此步驟向 ontology_simulator 發出 20 次 HTTP 請求（4 批 × 5 並發）。每次回傳最近 5 筆事件。最終 DataFrame 有 100 列（20 台 × 5 筆），帶有 <code>toolID</code>、<code>eventTime</code>、<code>spc_status</code> 等欄位。
+      </div>
+
+      <hr/>
+
+      <h2>Phase 4：n3 執行 — block_filter（Pure Python）</h2>
+
+      <pre><code># blocks/filter.py → execute()
+df = outputs['n2']['data']   # 100 rows
+
+column = "spc_status"
+operator = "="
+value = "OOC"
+
+# pandas boolean mask（無任何外部呼叫）
+mask = df["spc_status"] == "OOC"
+filtered = df[mask].reset_index(drop=True)
+
+# 假設結果：12 筆 OOC（來自 EQP-03×4, EQP-07×3, EQP-12×5）
+outputs['n3'] = {"data": filtered}   # 12 rows</code></pre>
+
+      <hr/>
+
+      <h2>Phase 5：n4 執行 — block_step_check（Pure Python）</h2>
+
+      <pre><code># blocks/step_check.py → execute()
+df = outputs['n3']['data']   # 12 rows (OOC only)
+
+aggregation = "count"   # 聚合函數
+operator = ">="          # 比較運算子
+threshold = 2            # 門檻值
+
+# 聚合：count 共 12 筆 OOC
+current_val = len(df)    # = 12
+
+# 比對門檻
+result = 12 >= 2         # = True
+
+outputs['n4'] = {
+    "pass": True,          # ← 觸發 Alarm 的關鍵
+    "value": 12,
+    "note": "count=12 >= 2"
+}</code></pre>
+
+      <hr/>
+
+      <h2>Phase 6：executor.py 收集結果，判斷是否觸發 Alarm</h2>
+
+      <pre><code># executor.py 執行完所有 node 後
+final_output = outputs['n4']
+
+if final_output.get("pass") is True:
+    # Alarm gate：觸發
+    alarm_payload = {
+        "skill_slug": "p-ooc52",
+        "verdict": "triggered",
+        "value": 12,
+        "note": "count=12 >= 2",
+        "triggered_at": "2026-07-16T09:00:00Z"
+    }
+    await java_client.create_alarm(alarm_payload)
+    # Java 寫入 alarms 表，前端 Alarm Center 即時更新</code></pre>
+
+      <hr/>
+
+      <h2>完整執行流程一覽</h2>
+
+      <table>
+        <thead><tr><th>步驟</th><th>執行者</th><th>輸入</th><th>輸出</th><th>外部 HTTP？</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>0. 觸發</td>
+            <td>java-scheduler</td>
+            <td>cron 排程</td>
+            <td>POST /internal/pipeline/execute</td>
+            <td>Java → sidecar</td>
+          </tr>
+          <tr>
+            <td>1. 拓撲排序</td>
+            <td>executor.py</td>
+            <td>pipeline_json</td>
+            <td>執行佇列：n1→n2→n3→n4</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td>2. n1 list_objects</td>
+            <td>ListObjectsBlockExecutor</td>
+            <td>kind='tool'</td>
+            <td>DataFrame 20 台機台</td>
+            <td><strong>1 次</strong> → simulator</td>
+          </tr>
+          <tr>
+            <td>3. n2 mcp_foreach</td>
+            <td>McpForeachBlockExecutor</td>
+            <td>20 台機台 DataFrame</td>
+            <td>DataFrame 100 列 events</td>
+            <td><strong>20 次</strong> → simulator（5 並發）</td>
+          </tr>
+          <tr>
+            <td>4. n3 filter</td>
+            <td>FilterBlockExecutor</td>
+            <td>100 列 DataFrame</td>
+            <td>DataFrame 12 列（OOC only）</td>
+            <td>否（純 pandas）</td>
+          </tr>
+          <tr>
+            <td>5. n4 step_check</td>
+            <td>StepCheckBlockExecutor</td>
+            <td>12 列 DataFrame</td>
+            <td><code>{pass: true, value: 12}</code></td>
+            <td>否（純 Python）</td>
+          </tr>
+          <tr>
+            <td>6. Alarm 觸發</td>
+            <td>executor.py → JavaAPIClient</td>
+            <td><code>pass: true</code></td>
+            <td>Alarm 寫入 DB，前端更新</td>
+            <td><strong>1 次</strong> → Java /internal/alarms</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <strong>整趟執行：</strong>共 <strong>22 次外部 HTTP 呼叫</strong>（1 次 list_tools + 20 次 get_process_info + 1 次 create_alarm），其餘全部是 in-process pandas 運算。執行時間主要瓶頸在 Phase 3 的 20 次 MCP 並發（受 Semaphore(5) 限制，分 4 批）。
+      </div>
+
+      <h3>如果換成 Chat Agent 即時建構的 Pipeline</h3>
+      <p>流程完全相同，差別只在起點：</p>
+      <pre><code># 用戶說：「幫我分析全廠 OOC 狀況，超過 2 次的就告警」
+# Chat Agent → Glass Box Builder（Planner → Builder → finalize）
+# finalize_node 產出 final_pipeline（同樣的 PipelineJSON）
+# 前端 Canvas 顯示草稿
+# 用戶點「執行」→ 同樣走 POST /internal/pipeline/execute
+# 從 Phase 1 開始，邏輯完全一樣</code></pre>
+
+      <div class="callout">
+        <strong>設計哲學的體現：</strong>無論 pipeline 從哪裡來（AI 生成 / 用戶拖拉 / Skill 觸發），<strong>executor.py 的邏輯永遠一致</strong>。「誰建 pipeline」和「pipeline 怎麼跑」是完全解耦的兩件事。
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Highlight active nav item on scroll
+  const sections = document.querySelectorAll('.qa-block');
+  const navLinks = document.querySelectorAll('nav a');
+  const navEl = document.querySelector('nav');
+
+  function setActive(id) {
+    navLinks.forEach(l => l.classList.remove('active'));
+    const link = document.querySelector(`nav a[href="#${id}"]`);
+    if (!link) return;
+    link.classList.add('active');
+    // Auto-scroll sidebar so the active link stays visible
+    const navTop = navEl.scrollTop;
+    const navBottom = navTop + navEl.clientHeight;
+    const linkTop = link.offsetTop;
+    const linkBottom = linkTop + link.offsetHeight;
+    if (linkTop < navTop) {
+      navEl.scrollTo({ top: linkTop - 24, behavior: 'smooth' });
+    } else if (linkBottom > navBottom) {
+      navEl.scrollTo({ top: linkBottom - navEl.clientHeight + 24, behavior: 'smooth' });
+    }
+  }
+
+  // Use IntersectionObserver with rootMargin so the topmost visible section wins
+  let visibleSections = new Map();
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        visibleSections.set(entry.target.id, entry.boundingClientRect.top);
+      } else {
+        visibleSections.delete(entry.target.id);
+      }
+    });
+    if (visibleSections.size === 0) return;
+    // Pick the section closest to the top of the viewport
+    const topId = [...visibleSections.entries()].sort((a, b) => a[1] - b[1])[0][0];
+    setActive(topId);
+  }, { rootMargin: '0px 0px -60% 0px', threshold: 0 });
+
+  sections.forEach(s => observer.observe(s));
+
+  // Set first link active on load
+  if (sections.length) setActive(sections[0].id);
+</script>
+</body>
+</html>
+</html>
