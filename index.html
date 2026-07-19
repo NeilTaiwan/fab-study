@@ -543,6 +543,7 @@
   <a href="#q24"><span class="nav-num">24</span>Block 完整清單：48 個，code vs MCP</a>
   <a href="#q25"><span class="nav-num">25</span>完整 Pipeline 執行一路走到底</a>
   <a href="#q26"><span class="nav-num">26</span>實際 MCP 設計全解：Client/Server/Tools/Sequence</a>
+  <a href="#q27"><span class="nav-num">27</span>8 個 MCP 逐一規格</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3136,6 +3137,198 @@ draft_mcp(
     </div>
   </section>
 
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q27 -->
+  <section class="qa-block" id="q27">
+    <div class="q-block">
+      <div class="q-label">Q27</div>
+      <div class="q-text">8 個 MCP 逐一規格設計為何？</div>
+    </div>
+    <div class="a-block">
+      <p>以下依照「在 <code>mcp_definitions</code> 的登記位置」整理。每個 MCP 都有固定的四欄：<code>name</code>、<code>api_config</code>（endpoint + method）、<code>input_schema</code>（參數）、<code>description</code>（用途與欄位說明，Agent 唯一文件來源）。</p>
+
+      <div class="note" style="margin-top:16px">
+        <strong>來源對照</strong>：list_active_lots / list_steps / list_apcs / list_spcs 來自 V17；rework_request 來自 V53；list_tools / get_process_info / get_process_summary 無 INSERT migration（推斷為 Java DataLoader 或 V0 baseline 植入）。
+      </div>
+
+      <!-- ① list_active_lots -->
+      <h3 style="margin-top:28px">① list_active_lots</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/lots?status=active</code></td></tr>
+          <tr><td>Input params</td><td>（無）</td></tr>
+          <tr><td>Output</td><td><code>[{lot_id, current_step, status, cycle}, ...]</code><br>status: <code>"Waiting"</code>（排隊）/ <code>"Processing"</code>（機台運行中）；Finished 不列</td></tr>
+          <tr><td>Use when</td><td>「現在有哪些 lot 還沒跑完」「哪些 lot 卡在哪一站」</td></tr>
+          <tr><td>⚠ 常見誤用</td><td>想看已完成 lot 的歷史 → 用 get_process_info，不是這個</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ② list_steps -->
+      <h3 style="margin-top:28px">② list_steps</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/list-steps</code></td></tr>
+          <tr><td>Input params</td><td>（無）</td></tr>
+          <tr><td>Output</td><td><code>{total: int, data: [{name: "STEP_001", description}, ...]}</code></td></tr>
+          <tr><td>Use when</td><td>「系統有哪些 step」「總共幾站」；配合 list_active_lots 看 lot 剩餘進度</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ③ list_apcs -->
+      <h3 style="margin-top:28px">③ list_apcs</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/list-apcs</code></td></tr>
+          <tr><td>Input params</td><td>（無）</td></tr>
+          <tr><td>Output</td><td><code>{total: int, data: [{apcID: "APC-003"}, ...]}</code></td></tr>
+          <tr><td>Use when</td><td>「系統現在有幾個 APC」「APC 名單」；想查某 APC 歷史時先確認 ID</td></tr>
+          <tr><td>⚠ 常見誤用</td><td>這只列 APC config object（可重用、跨 lot 共享）。<br>實際 process 的 APC 數值請用 get_process_info（<code>events[].APC.parameters</code>）</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ④ list_spcs -->
+      <h3 style="margin-top:28px">④ list_spcs</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/list-spcs</code></td></tr>
+          <tr><td>Input params</td><td>（無）</td></tr>
+          <tr><td>Output</td><td><code>{total: int, data: [{chart: "xbar_chart", description}, ...]}</code><br>5 種：<code>xbar_chart</code> / <code>r_chart</code> / <code>s_chart</code> / <code>p_chart</code> / <code>c_chart</code></td></tr>
+          <tr><td>Use when</td><td>「SPC 有哪幾種 chart」；寫 pipeline 前確認可用 SPC 欄位</td></tr>
+          <tr><td>⚠ 常見誤用</td><td>chart 名是 <code>"xbar_chart"</code>（含 <code>_chart</code> 後綴），不是 <code>"xbar"</code>。<br>實際數值請用 get_process_info — 這個 MCP 只列種類</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ⑤ rework_request -->
+      <h3 style="margin-top:28px">⑤ rework_request</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>POST</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/rework_request</code></td></tr>
+          <tr><td>Input params</td><td><code>lotID</code>（required）、<code>step</code>（optional）、<code>flowID</code>（optional）</td></tr>
+          <tr><td>Output</td><td><code>{total, rework_records: [{reworkTime, reworkCount, lotID, step, reworkInfo:{...}}]}</code></td></tr>
+          <tr><td>Use when</td><td>「LOT-0123 有沒有 rework 過」「LOT-0123 在 STEP_010 的 rework」</td></tr>
+          <tr><td>特殊設計</td><td>rework 由 photo 站（step 號為 5 的倍數）OOC 時自動觸發，OOC ↔ rework 1:1</td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:8px">
+        <strong>故意的欄位名稱 mismatch（測試 LLM 理解）</strong>
+        <div style="overflow-x:auto;margin-top:8px">
+        <table>
+          <thead><tr><th>MESInfo（get_process_info）</th><th>reworkInfo（rework_request）</th></tr></thead>
+          <tbody>
+            <tr><td>flowID</td><td>mainPD_ID</td></tr>
+            <tr><td>stageID</td><td>PDID</td></tr>
+            <tr><td>processJobID</td><td>rwJobID</td></tr>
+            <tr><td>slotList</td><td>slotMap</td></tr>
+            <tr><td>productID</td><td>prodCode</td></tr>
+            <tr><td>photoLayerID</td><td>layerName</td></tr>
+            <tr><td>technology</td><td>techNode</td></tr>
+            <tr><td>foupID</td><td>carrierID</td></tr>
+            <tr><td>waferCount</td><td>slotCount</td></tr>
+            <tr><td>lotType</td><td>lotKind</td></tr>
+            <tr><td>customer</td><td>customerCode</td></tr>
+            <tr><td>mfgRegion</td><td>region</td></tr>
+            <tr><td>holdState</td><td>holdStatus</td></tr>
+          </tbody>
+        </table>
+        </div>
+        ⚠ 過濾 flowID 時請用 <code>reworkInfo.mainPD_ID</code>，非頂層 flowID。非 photo step（5 的倍數之外）永遠 0 筆。
+      </div>
+
+      <!-- ⑥ list_tools -->
+      <h3 style="margin-top:28px">⑥ list_tools</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/tools</code></td></tr>
+          <tr><td>Input params</td><td>（無）</td></tr>
+          <tr><td>Output</td><td>全機台清單（從 MongoDB 讀）<br><code>[{toolID, type, location, ...}, ...]</code></td></tr>
+          <tr><td>Use when</td><td>「系統有哪些機台」「某型號 tool 有幾台」</td></tr>
+          <tr><td>來源</td><td>無 INSERT migration；推斷早於 V17 就存在（V17 comment: "list_tools already exists"）</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ⑦ get_process_summary -->
+      <h3 style="margin-top:28px">⑦ get_process_summary</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/process/summary</code></td></tr>
+          <tr><td>Input params</td><td><code>toolID</code>（optional）、<code>lotID</code>（optional）、<code>step</code>（optional）、<code>since</code>（optional，ISO datetime）</td></tr>
+          <tr><td>Output</td><td>聚合統計：<code>{total_events, ooc_count, ooc_rate, by_tool:[{toolID, count, ooc}], by_step:[{step, count, ooc}], recent_ooc:[...]}</code></td></tr>
+          <tr><td>Use when</td><td>「這段時間 OOC 率多少」「哪台機最多異常」等統計問題；不需要逐筆 event</td></tr>
+          <tr><td>vs get_process_info</td><td>summary = 聚合數字；info = 完整 event 明細（含 SPC/APC/DC 值）</td></tr>
+          <tr><td>來源</td><td>無 INSERT migration；由 <code>context_loader.py</code> 的 agent system prompt 間接揭露</td></tr>
+        </tbody>
+      </table>
+
+      <!-- ⑧ get_process_info -->
+      <h3 style="margin-top:28px">⑧ get_process_info</h3>
+      <table>
+        <thead><tr><th>欄位</th><th>值</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP Method</td><td><code>GET</code></td></tr>
+          <tr><td>Endpoint</td><td><code>http://localhost:8012/api/v1/process/info</code></td></tr>
+          <tr><td>Input params</td><td><code>toolID</code> / <code>lotID</code> / <code>step</code>（三選一 required）、<code>objectName</code>（optional）、<code>since</code>（optional）、<code>limit</code>（optional，最大 500）</td></tr>
+          <tr><td>Output 結構</td><td>巢狀 event 明細，每筆 event 含 6 大資料塊：</td></tr>
+        </tbody>
+      </table>
+
+      <div style="overflow-x:auto;margin-top:8px">
+      <table>
+        <thead><tr><th>資料塊</th><th>關鍵欄位</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>SPC</code></td><td>charts.xbar_chart.{value,ucl,lcl,is_ooc}</td><td>統計製程管制，5 種 chart</td></tr>
+          <tr><td><code>APC</code></td><td>parameters.{apcID, values}</td><td>先進製程控制參數</td></tr>
+          <tr><td><code>DC</code></td><td>measurements.{name, value, unit}</td><td>資料採集量測值</td></tr>
+          <tr><td><code>RECIPE</code></td><td>name, version, steps</td><td>配方資訊</td></tr>
+          <tr><td><code>FDC</code></td><td>sensors.{name, avg, stddev}</td><td>設備資料採集（感測器統計）</td></tr>
+          <tr><td><code>EC</code></td><td>equipment_conditions</td><td>機台狀態條件</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="note" style="margin-top:8px">
+        <strong>特殊：block_process_history 直接 hardcode 此 endpoint</strong><br>
+        <code>python_ai_sidecar/pipeline_builder/blocks/process_history.py</code> 直接讀 <code>ONTOLOGY_SIM_URL</code> 環境變數，<strong>完全繞過</strong> <code>mcp_definitions</code>。這意味著：<br>
+        (a) 改 DB 裡的 api_config 不影響 block_process_history 的實際行為；<br>
+        (b) block_mcp_call / block_mcp_foreach 才是透過 mcp_definitions 動態查路由的。
+      </div>
+
+      <!-- summary table -->
+      <h3 style="margin-top:32px">8 個 MCP 一覽</h3>
+      <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr><th>#</th><th>名稱</th><th>Method</th><th>Endpoint（:8012）</th><th>必填參數</th><th>Block 入口</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>①</td><td>list_active_lots</td><td>GET</td><td>/api/v1/lots?status=active</td><td>—</td><td>block_list_objects (kind=lot)</td></tr>
+          <tr><td>②</td><td>list_steps</td><td>GET</td><td>/api/v1/list-steps</td><td>—</td><td>block_list_objects (kind=step)</td></tr>
+          <tr><td>③</td><td>list_apcs</td><td>GET</td><td>/api/v1/list-apcs</td><td>—</td><td>block_list_objects (kind=apc)</td></tr>
+          <tr><td>④</td><td>list_spcs</td><td>GET</td><td>/api/v1/list-spcs</td><td>—</td><td>block_list_objects (kind=spc)</td></tr>
+          <tr><td>⑤</td><td>rework_request</td><td>POST</td><td>/api/v1/rework_request</td><td>lotID</td><td>block_rework_request（專屬）</td></tr>
+          <tr><td>⑥</td><td>list_tools</td><td>GET</td><td>/api/v1/tools</td><td>—</td><td>block_list_objects (kind=tool)</td></tr>
+          <tr><td>⑦</td><td>get_process_summary</td><td>GET</td><td>/api/v1/process/summary</td><td>toolID/lotID/step 擇一</td><td>block_mcp_call</td></tr>
+          <tr><td>⑧</td><td>get_process_info</td><td>GET</td><td>/api/v1/process/info</td><td>toolID/lotID/step 擇一</td><td>block_process_history（hardcode 繞過 DB）</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -3212,5 +3405,4 @@ draft_mcp(
   });
 </script>
 </body>
-</html>
 </html>
