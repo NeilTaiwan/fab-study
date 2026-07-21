@@ -553,6 +553,8 @@
   <a href="#q34"><span class="nav-num">34</span>20 user 測試一小時觸發多少次 LLM？</a>
   <a href="#q35"><span class="nav-num">35</span>Block 設計：5 類 58 個，案例分析</a>
   <a href="#q36"><span class="nav-num">36</span>Block 與 MCP 的關聯</a>
+  <a href="#q37"><span class="nav-num">37</span>真正的 MCP protocol 在哪裡用？</a>
+  <a href="#q38"><span class="nav-num">38</span>mcp_pipeline_builder 是 Claude cowork 入口</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3654,6 +3656,101 @@ block_mcp_foreach     ──→ 同上，每 row 一次
 mcp_auto block        ──→ McpProxyBlockExecutor（同 block_mcp_call path）
 
 TRANSFORM / LOGIC / OUTPUT（53 個）── 純 pandas，與 MCP 完全無關</code></pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q37 -->
+  <section class="qa-block" id="q37">
+    <div class="q-block">
+      <div class="q-label">Q37</div>
+      <div class="q-text">整個 codebase 真正用到 MCP protocol 的地方在哪裡？</div>
+    </div>
+    <div class="a-block">
+      <p>只有一個地方：</p>
+      <pre><code># mcp_pipeline_builder/server.py
+from mcp.server.fastmcp import FastMCP          ← 唯一的 MCP protocol import</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        sidecar、java-backend、ontology_simulator <strong>完全沒有任何 MCP protocol import</strong>。
+      </div>
+
+      <h3 style="margin-top:20px">所有叫「MCP」的東西，實際上是什麼</h3>
+      <table>
+        <thead><tr><th>名稱</th><th>實際上是</th><th>跟 MCP protocol 的關係</th></tr></thead>
+        <tbody>
+          <tr><td><code>mcp_definitions</code> 表</td><td>HTTP endpoint registry（PostgreSQL）</td><td>零關係，自己取名叫 MCP</td></tr>
+          <tr><td><code>block_mcp_call</code></td><td>查 DB 拿 URL → httpx 打 HTTP</td><td>零關係</td></tr>
+          <tr><td><code>block_mcp_foreach</code></td><td>同上，每 row 一次</td><td>零關係</td></tr>
+          <tr><td><code>mcp_pipeline_builder</code></td><td>真正的 FastMCP Server</td><td>唯一真實 MCP</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">真正的 MCP 使用場景</h3>
+      <pre><code>Claude Desktop（外部）
+    ↓ 標準 MCP protocol（JSON-RPC）
+mcp_pipeline_builder :8060
+    ↓ 普通 httpx
+Java :8002 + Sidecar :8050（內部 API）</code></pre>
+      <p>這個 server 是給 <strong>外部工具（Claude Desktop）</strong> 用的，不是給 sidecar 內部 LLM 用的。內部 LLM 走 tool-use loop + BlockExecutor，完全不同的路。</p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q38 -->
+  <section class="qa-block" id="q38">
+    <div class="q-block">
+      <div class="q-label">Q38</div>
+      <div class="q-text">mcp_pipeline_builder 是 Claude cowork 的手伸進來測試操作的設計？</div>
+    </div>
+    <div class="a-block">
+      <p>對。server.py 開頭就直接說明了：</p>
+      <pre><code>"""AIOps Pipeline-Builder — remote MCP server (runs on EC2).
+
+Lets an external Claude (Claude Desktop / cowork) build an analysis pipeline
+the way a human does: discover blocks, preview data to learn its shape,
+assemble the pipeline JSON, validate, run, and save...
+"""</code></pre>
+
+      <h3 style="margin-top:20px">兩條進入平台的路</h3>
+      <pre><code>一般使用者：Web UI 輸入需求
+    → Sidecar Agent（Haiku/Sonnet）tool-use loop
+    → Java + Sidecar 內部 API
+
+開發者/測試（cowork）：Claude Desktop 連 MCP server
+    → mcp_pipeline_builder :8060
+    → 同一套 Java + Sidecar 內部 API</code></pre>
+      <p>兩條路最終打到同一個後端，只是入口不同。</p>
+
+      <h3 style="margin-top:20px">三個設計細節印證 cowork 意圖</h3>
+
+      <p><strong>1. <code>_handoff</code> 的 <code>_next</code> 欄位（寫給 Claude 自己看）</strong></p>
+      <pre><code>return {
+    "executed": False,
+    "launch_url": "https://aiops-gill.com/handoff/{id}",
+    "_next": "你什麼都沒做。把 launch_url 給 user，請他在系統裡確認才會執行。
+              絕不要說已刪除/已啟用 —— 在他確認前什麼都沒變。"
+}</code></pre>
+      <p>危險操作（activate/delete）不直接執行，回傳 URL 讓真人在 GUI 確認，防止 Claude 謊報完成。</p>
+
+      <p><strong>2. <code>GatedFastMCP</code> 的 private key 機制</strong></p>
+      <pre><code># 每 30 秒從 Java 查哪些 tool 是 private
+private = await _private_keys()   # GET /api/v1/mcp-capabilities
+# list_tools 隱藏 private tools
+# call_tool 拒絕 private tools</code></pre>
+      <p>IT Admin 在後台控制 cowork 能做什麼，管控外部 Claude 的權限邊界。</p>
+
+      <p><strong>3. INSTRUCTIONS 裡的 workflow（教 Claude 怎麼操作）</strong></p>
+      <pre><code>WORKFLOW (always in this order):
+ 1. list_blocks() → explain_block(name)   # 先搞清楚有什麼
+ 2. preview(pj, node_id)                  # 看資料形狀，確認 rows > 0
+ 3. 根據實際欄位名建 pipeline
+ 4. validate(pj)
+ 5. execute(pj)
+ 6. save_pipeline(name, pj)               # 存起來給人 review</code></pre>
+      <p>這是教 Claude Desktop「像人一樣」一步步操作，不是給 end user 看的說明。</p>
+
+      <div class="note" style="margin-top:16px">
+        <strong>定位總結</strong>：mcp_pipeline_builder 是讓 Claude Desktop 當開發者/測試者使用的後門入口，透過標準 MCP protocol 暴露平台全部操作能力，但危險操作仍需真人在 GUI 確認（handoff 機制）。
+      </div>
     </div>
   </section>
 
