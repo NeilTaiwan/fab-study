@@ -544,6 +544,13 @@
   <a href="#q25"><span class="nav-num">25</span>完整 Pipeline 執行一路走到底</a>
   <a href="#q26"><span class="nav-num">26</span>實際 MCP 設計全解：Client/Server/Tools/Sequence</a>
   <a href="#q27"><span class="nav-num">27</span>8 個 MCP 逐一規格</a>
+  <a href="#q28"><span class="nav-num">28</span>AI Model 在哪裡用？怎麼用？</a>
+  <a href="#q29"><span class="nav-num">29</span>Sonnet tool-use loop 實際運作</a>
+  <a href="#q30"><span class="nav-num">30</span>一問一答跑幾次 LLM？</a>
+  <a href="#q31"><span class="nav-num">31</span>建 Pipeline 最少最多幾次 LLM？</a>
+  <a href="#q32"><span class="nav-num">32</span>LLM 怎麼決定終止？會不會卡住？</a>
+  <a href="#q33"><span class="nav-num">33</span>Haiku vs Sonnet：兩層架構</a>
+  <a href="#q34"><span class="nav-num">34</span>20 user 測試一小時觸發多少次 LLM？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3137,6 +3144,299 @@ draft_mcp(
     </div>
   </section>
 
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q28 -->
+  <section class="qa-block" id="q28">
+    <div class="q-block">
+      <div class="q-label">Q28</div>
+      <div class="q-text">哪邊用到 AI model？怎麼用的？</div>
+    </div>
+    <div class="a-block">
+      <p>整個 sidecar 有兩個 model tier，Sonnet 負責對話，Haiku 負責所有背景工作。</p>
+
+      <h3 style="margin-top:20px">兩個 Model Tier</h3>
+      <table>
+        <thead><tr><th>Tier</th><th>Model</th><th>用在哪</th></tr></thead>
+        <tbody>
+          <tr><td>智力型</td><td><code>claude-sonnet-4-20250514</code></td><td>Chat Orchestrator（即時對話）</td></tr>
+          <tr><td>速度/成本型</td><td><code>claude-haiku-4-5-20251001</code></td><td>Builder / Planner / Repair 及所有背景工作</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">逐一用途</h3>
+      <table>
+        <thead><tr><th>元件</th><th>Model</th><th>呼叫方式</th><th>做什麼</th></tr></thead>
+        <tbody>
+          <tr><td>Chat Orchestrator v2</td><td>Sonnet（env: <code>ANTHROPIC_MODEL</code>）</td><td>AsyncAnthropic SDK streaming</td><td>使用者對話、tool-use loop</td></tr>
+          <tr><td>Builder / Planner / Repair</td><td>Haiku（env: <code>LLM_MODEL</code>）</td><td><code>get_llm_client()</code>（cached）</td><td>Pipeline 建構每一個 LangGraph node</td></tr>
+          <tr><td>MCP Derivative Generator</td><td>Haiku（hardcode）</td><td><code>AnthropicLLMClient</code> direct</td><td>從 MCP description 自動產生 Block + Skill 草稿</td></tr>
+          <tr><td>Supervisor Curation</td><td>Haiku（hardcode）</td><td><code>AnthropicLLMClient</code> direct</td><td>離線記憶管理（MERGE/PRUNE/PROMOTE）</td></tr>
+          <tr><td>Supervisor Forensics</td><td>Haiku（hardcode）</td><td><code>AnthropicLLMClient</code> direct</td><td>離線 trace 分析、找 block hotspot 根因</td></tr>
+          <tr><td>Result Vision Judge</td><td>Haiku（hardcode）</td><td>base64 截圖 + vision API</td><td>build 後用 vision 判斷 chart 畫得對不對</td></tr>
+          <tr><td>Skill Doc Generator</td><td>Haiku（hardcode）</td><td><code>AnthropicLLMClient</code> direct</td><td>自動生成 Skill 說明文件</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">呼叫層架構</h3>
+      <pre><code>所有 LLM 呼叫
+└── agent_helpers_native/llm_client.py
+    ├── AnthropicLLMClient   ← 主路徑
+    │     ├── prompt caching（system + tools ephemeral）
+    │     ├── extended thinking（Claude 4/5 family）
+    │     └── token usage → 回報 Java /internal/llm-usage
+    ├── OllamaLLMClient      ← 備援（OpenAI-compatible）
+    └── InternalProxyLLMClient ← 企業內網 gateway</code></pre>
+
+      <h3 style="margin-top:20px">可覆蓋的 env var</h3>
+      <table>
+        <thead><tr><th>變數</th><th>預設值</th><th>影響範圍</th></tr></thead>
+        <tbody>
+          <tr><td><code>ANTHROPIC_MODEL</code></td><td>claude-sonnet-4-20250514</td><td>Chat Orchestrator</td></tr>
+          <tr><td><code>LLM_MODEL</code></td><td>claude-haiku-4-5-20251001</td><td>全域 Haiku 預設</td></tr>
+          <tr><td><code>MCP_DERIVATIVE_LLM_MODEL</code></td><td>Haiku</td><td>MCP 自動產生</td></tr>
+          <tr><td><code>RESULT_VISION_MODEL</code></td><td>Haiku</td><td>視覺品質判斷</td></tr>
+          <tr><td><code>ANTHROPIC_THINKING_BUDGET</code></td><td>0（off）</td><td>extended thinking tokens</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q29 -->
+  <section class="qa-block" id="q29">
+    <div class="q-block">
+      <div class="q-label">Q29</div>
+      <div class="q-text">Sonnet tool-use loop 實際怎麼運作？</div>
+    </div>
+    <div class="a-block">
+      <p>Sonnet 本身不執行任何 tool，它只輸出「我要呼叫哪個 tool + 什麼參數」的 JSON，code 去執行，結果再丟回給 Sonnet。</p>
+
+      <h3 style="margin-top:20px">一次 LLM call 內部做了什麼</h3>
+      <pre><code>1. 組 system prompt（3 層）
+   ├── Soul（工廠鐵律）          ← cache_control: ephemeral
+   ├── MCP registry（工具清單）  ← cache_control: ephemeral
+   └── RAG memories（動態記憶）  ← NOT cached
+
+2. 決定哪些 tool 給 LLM 看
+   ├── 隱藏內部工具（execute_mcp, query_data...）
+   ├── ON_DUTY 角色 → 再隱藏寫入類（build_pipeline_live...）
+   └── PIPELINE_ONLY_MODE → 隱藏 execute_skill
+
+3. 呼叫 Anthropic SDK（streaming）
+   max_tokens: 8192，最多 retry 2 次
+
+4. 解析回應
+   ├── 有 tool_use block → 交給 graph 執行 tool
+   └── 純文字 → 路由到 synthesis，回應 user</code></pre>
+
+      <h3 style="margin-top:20px">Tool-use loop 流程</h3>
+      <pre><code>user 說「EQP-01 最近 OOC 情況」
+    ↓
+Sonnet → tool_use { get_process_info, {toolID: "EQP-01"} }
+    ↓
+code 打 HTTP 到 simulator（不需要 LLM）
+    ↓
+結果塞回 Sonnet context
+    ↓
+Sonnet 判斷：夠了 → 輸出純文字答案
+    ↓
+synthesis → 回應 user</code></pre>
+
+      <div class="note">
+        <strong>終止條件</strong>（<code>_should_continue</code> routing function）：<br>
+        LLM 回應無 tool_calls → synthesis（正常終止）<br>
+        force_synthesis = true → synthesis（錯誤終止）<br>
+        current_iteration ≥ 25 → synthesis（安全上限）
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q30 -->
+  <section class="qa-block" id="q30">
+    <div class="q-block">
+      <div class="q-label">Q30</div>
+      <div class="q-text">一問一答最少跑幾次 LLM？</div>
+    </div>
+    <div class="a-block">
+      <table>
+        <thead><tr><th>問題類型</th><th>Sonnet 次數</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>知識問答（SPC 是什麼？）</td><td><strong>1 次</strong></td><td>Sonnet 直接回答，不呼叫任何 tool</td></tr>
+          <tr><td>資料查詢（LOT-0123 有沒有 OOC？）</td><td><strong>2 次</strong></td><td>Round 1：決定呼叫 get_process_info<br>Round 2：看結果 → 輸出答案</td></tr>
+          <tr><td>多工具查詢</td><td><strong>3+ 次</strong></td><td>每個 tool call = 1 次 LLM</td></tr>
+        </tbody>
+      </table>
+      <div class="note" style="margin-top:12px">
+        <strong>關鍵</strong>：tool 執行本身（HTTP call）不需要 LLM。LLM 只決定「要不要呼叫、呼叫哪個、帶什麼參數」，以及「看到結果後下一步做什麼」。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q31 -->
+  <section class="qa-block" id="q31">
+    <div class="q-block">
+      <div class="q-label">Q31</div>
+      <div class="q-text">建 Pipeline 最少最多幾次 LLM？</div>
+    </div>
+    <div class="a-block">
+      <p>Chat 端用 Sonnet，Builder 端用 Haiku，兩層獨立計算。</p>
+
+      <h3 style="margin-top:16px">最少（極順利，2-phase pipeline）</h3>
+      <table>
+        <thead><tr><th>步驟</th><th>Model</th><th>次數</th></tr></thead>
+        <tbody>
+          <tr><td>Chat 決定呼叫 plan_pipeline</td><td>Sonnet</td><td>1</td></tr>
+          <tr><td>Chat build 完回應 user</td><td>Sonnet</td><td>1</td></tr>
+          <tr><td>brief_planner（對齊卡）</td><td>Haiku</td><td>1</td></tr>
+          <tr><td>goal_plan（規劃 phases）</td><td>Haiku</td><td>1</td></tr>
+          <tr><td>phase 1 source（1 round）</td><td>Haiku</td><td>1</td></tr>
+          <tr><td>phase 2 presentation（1 round）</td><td>Haiku</td><td>1</td></tr>
+          <tr><td>result_vision（截圖品質判斷）</td><td>Haiku</td><td>1</td></tr>
+          <tr><td colspan="2"><strong>合計</strong></td><td><strong>7 次</strong></td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">實際最少（每 phase 現實需 2–3 round）</h3>
+      <pre><code>每個 phase：inspect → add_node → verify ≈ 3 rounds
+2 phases × 3 = 6 Haiku（phase loop）
++ 2 Sonnet + 3 Haiku（brief/plan/vision）
+= 約 11–13 次</code></pre>
+
+      <h3 style="margin-top:20px">最多（順利完成，3-phase 複雜 pipeline）</h3>
+      <table>
+        <thead><tr><th>項目</th><th>次數</th></tr></thead>
+        <tbody>
+          <tr><td>Sonnet（Chat 兩端）</td><td>2</td></tr>
+          <tr><td>brief + goal_plan + vision</td><td>3</td></tr>
+          <tr><td>3 phases × 8 rounds（chart phase 上限 12）</td><td>24–28</td></tr>
+          <tr><td>phase_revise 介入</td><td>3–5</td></tr>
+          <tr><td><strong>合計</strong></td><td><strong>~32–35 次</strong></td></tr>
+        </tbody>
+      </table>
+
+      <table style="margin-top:12px">
+        <thead><tr><th></th><th>Sonnet</th><th>Haiku</th><th>合計</th></tr></thead>
+        <tbody>
+          <tr><td>最少（理想）</td><td>2</td><td>5</td><td>7</td></tr>
+          <tr><td>現實最少</td><td>2</td><td>9–11</td><td>11–13</td></tr>
+          <tr><td>最多（順利）</td><td>2</td><td>30–33</td><td>32–35</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q32 -->
+  <section class="qa-block" id="q32">
+    <div class="q-block">
+      <div class="q-label">Q32</div>
+      <div class="q-text">LLM 怎麼決定終止？會不會卡住不知道要停？</div>
+    </div>
+    <div class="a-block">
+      <p><strong>終止由 graph routing function 決定，不是 LLM 自己</strong>。LLM 決定 happy path；graph 保底「一定會停」。</p>
+
+      <h3 style="margin-top:16px">Chat 端終止邏輯（<code>_should_continue</code>）</h3>
+      <pre><code>每次 llm_call 結束後 graph 判斷：
+
+LLM 回應有 tool_calls？
+  → YES → 執行 tool → 回 llm_call（繼續）
+  → NO  → synthesis（終止，輸出給 user）
+
+強制終止：
+  → force_synthesis = True（錯誤）
+  → current_iteration ≥ 25（安全上限）</code></pre>
+
+      <h3 style="margin-top:20px">Builder 端終止邏輯（phase loop）</h3>
+      <pre><code>每個 phase 的 ReAct round 結束後：
+
+phase_done？
+  → YES → 推進到下一個 phase 或 finalize
+  → NO  → 繼續下一個 round
+
+round 數 ≥ 8？
+  → 強制 phase_revise 或 finalize</code></pre>
+
+      <h3 style="margin-top:20px">LLM 不知道要停的真實案例（Todos.md 記錄）</h3>
+      <table>
+        <thead><tr><th>模式</th><th>發生原因</th><th>修法</th></tr></thead>
+        <tbody>
+          <tr><td>re-inspect 迴圈</td><td>tool 結果藏住 is_ooc 欄位，LLM 以為資料沒到，一直查</td><td>inspect formatter 顯示全欄位</td></tr>
+          <tr><td>remove + re-add 同一 block</td><td>LLM 覺得沒成功，反覆拆掉重建</td><td>prompt 明示此為浪費 round</td></tr>
+          <tr><td>false-success</td><td>LLM 以為 phase 完成（其實沒有），下一 phase 又卡住</td><td>ENABLE_STRICT_PHASE_OUTPUT</td></tr>
+          <tr><td>Brief 無窮迴圈</td><td>bypass regex 不 match 空格 → 每輪重發 brief 卡</td><td>regex 改 <code>[^\]]*\]</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>設計原則</strong>：LLM 決定「繼續 or 停」的 happy path；graph 的 MAX_ITERATIONS / round budget 保底「最終一定停」。但上限只保證程式不死，不保證結果正確——這是 phase_revise 和 strict_phase_output 存在的原因。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q33 -->
+  <section class="qa-block" id="q33">
+    <div class="q-block">
+      <div class="q-label">Q33</div>
+      <div class="q-text">Haiku vs Sonnet 差別？為什麼分兩層？</div>
+    </div>
+    <div class="a-block">
+      <table>
+        <thead><tr><th></th><th>Haiku</th><th>Sonnet</th><th>Opus</th></tr></thead>
+        <tbody>
+          <tr><td><strong>定位</strong></td><td>快速、便宜</td><td>平衡</td><td>最強、最貴</td></tr>
+          <tr><td><strong>能力</strong></td><td>簡單任務、分類、格式化</td><td>複雜推理、多步驟</td><td>最高智力需求</td></tr>
+          <tr><td><strong>速度</strong></td><td>最快</td><td>中等</td><td>最慢</td></tr>
+          <tr><td><strong>價格</strong></td><td>最低</td><td>中等</td><td>最高</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">兩層架構設計邏輯</h3>
+      <pre><code>User
+ ↓
+Chat Orchestrator（Sonnet）   ← 使用者直接感知，需要強推理
+ ↓ 呼叫 plan_pipeline tool
+Builder（Haiku）              ← tool 內部跑，user 看不到
+ ↓ 完成後回傳結果
+Chat Orchestrator（Sonnet）   ← 拿到結果，回應 user</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        <strong>選用邏輯</strong>：Haiku 用在 Builder → 每次只做一件小事（選一個 block、填一個參數），不需要高智力，但會跑很多輪，成本控制重要。Sonnet 用在 Chat → 需要理解模糊自然語言、跨多輪保持語境，次數少但要聰明。<br><br>
+        簡單說：<strong>Haiku 是工人，Sonnet 是主管</strong>。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q34 -->
+  <section class="qa-block" id="q34">
+    <div class="q-block">
+      <div class="q-label">Q34</div>
+      <div class="q-text">20 個 user 測試一小時，觸發多少次 LLM？</div>
+    </div>
+    <div class="a-block">
+      <p>假設測試者 100% 都是觸發 pipeline build。</p>
+
+      <h3 style="margin-top:16px">基本假設</h3>
+      <table>
+        <thead><tr><th>項目</th><th>估算</th></tr></thead>
+        <tbody>
+          <tr><td>每次 build 耗時（含看結果、調整）</td><td>5–10 分鐘</td></tr>
+          <tr><td>每人每小時 build 次數</td><td>6–12 次</td></tr>
+          <tr><td>每次 build LLM 呼叫</td><td>13（min）～ 35（max）次</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">20 人 × 1 小時估算</h3>
+      <table>
+        <thead><tr><th></th><th>每人/小時</th><th>20人/小時</th><th>其中 Sonnet</th><th>其中 Haiku</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Min</strong></td><td>6次 × 13 = 78</td><td><strong>1,560</strong></td><td>240</td><td>1,320</td></tr>
+          <tr><td><strong>Max</strong></td><td>12次 × 35 = 420</td><td><strong>8,400</strong></td><td>480</td><td>7,920</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>成本結構</strong>：Haiku 佔 85%+ 的呼叫次數，但單價遠低於 Sonnet。實際費用主要由 Sonnet 的 input/output token 數決定，不是純看 call 次數。
+      </div>
+    </div>
+  </section>
 
   <!-- ══════════════════════════════════════════════════════════════════ Q27 -->
   <section class="qa-block" id="q27">
