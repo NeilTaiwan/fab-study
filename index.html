@@ -3567,59 +3567,93 @@ block_data_view   ← 顯示為 table</code></pre>
   <section class="qa-block" id="q36">
     <div class="q-block">
       <div class="q-label">Q36</div>
-      <div class="q-text">Block 與 MCP 的關聯是什麼？</div>
+      <div class="q-text">Block 與 MCP 的關聯是什麼？怎麼呼叫？有 prompt 嗎？</div>
     </div>
     <div class="a-block">
-      <p>大多數 block 與 MCP 無關。只有 SOURCE 裡的幾個 block 有關聯，且關聯方式各不相同。</p>
+      <p>大多數 block 與 MCP 無關。只有 SOURCE 的 4 個 block 有關聯，且呼叫方式各不相同。<strong>Prompt（LLM）只在 Agent 決定要填哪個 block 的參數時介入</strong>，block 實際執行是純 code，不再呼叫 LLM。</p>
 
-      <h3 style="margin-top:16px">四種關係模式</h3>
+      <h3 style="margin-top:20px">四種關係模式</h3>
 
+      <!-- ① -->
+      <h4 style="margin-top:16px">① block_process_history — 完全 hardcode，繞過 mcp_definitions</h4>
+      <p>對應 MCP：<code>get_process_info</code>（名義上），但實際上根本不查 DB。</p>
+      <pre><code># process_history.py
+url = f"{ONTOLOGY_SIM_URL}/api/v1/process/info"   # 直接讀環境變數
+resp = await httpx.get(url, params={toolID, lotID, step, ...})</code></pre>
+      <div class="note">改 mcp_definitions 裡 get_process_info 的 api_config <strong>完全不影響</strong>此 block 的行為。</div>
+
+      <!-- ② -->
+      <h4 style="margin-top:20px">② block_rework_request — 1:1 專屬 MCP，有自己的 executor</h4>
+      <p>對應 MCP：<code>rework_request</code>（V53 同時 INSERT block + MCP）。</p>
+      <pre><code># rework_request block executor（自有邏輯）
+POST http://localhost:8012/api/v1/rework_request
+body: { lotID, step?, flowID? }
+→ 回傳後展平 reworkInfo.* 欄位成 rwi_* 前綴 columns</code></pre>
+      <div class="note">雖有對應 MCP，但 block 不走 block_mcp_call 通用 dispatcher，有自己的 executor 來處理 reworkInfo 的欄位展平邏輯。</div>
+
+      <!-- ③ -->
+      <h4 style="margin-top:20px">③ block_list_objects — KIND_TO_MCP 對照表 → 委派給 block_mcp_call</h4>
+      <p>對應 MCP：5 個 list 型 MCP（tool/lot/step/apc/spc）。</p>
+      <pre><code># list_objects.py
+KIND_TO_MCP = {
+    "tool": "list_tools",
+    "lot":  "list_active_lots",
+    "step": "list_steps",
+    "apc":  "list_apcs",
+    "spc":  "list_spcs",
+}
+# 實際呼叫：委派給 McpCallBlockExecutor
+mcp_name = KIND_TO_MCP[kind]
+return await self._mcp.execute(params={"mcp_name": mcp_name, "args": args}, ...)</code></pre>
+      <p>設計目的：讓 Agent 只需填 <code>kind="tool"</code>，不需要記 MCP 名稱（提升 discoverability）。底層走一樣的 dispatch path。</p>
+
+      <!-- ④ -->
+      <h4 style="margin-top:20px">④ block_mcp_call / block_mcp_foreach — 通用動態路由</h4>
+      <p>對應 MCP：任何已在 mcp_definitions 登記的 MCP（最常用：<code>get_process_summary</code>、<code>get_process_info</code> 等）。</p>
+      <pre><code># mcp_call.py — 三步驟
+# Step 1: 去 Java 查 MCP metadata
+mcp = await java.get_mcp_by_name(mcp_name)   # GET /internal/mcp-definitions
+
+# Step 2: 解析 api_config
+url    = api_config["endpoint_url"]
+method = api_config["method"]   # GET or POST
+
+# Step 3: 打 HTTP
+if method == "GET":
+    resp = await httpx.get(url, params=args)
+else:
+    resp = await httpx.post(url, json=args)
+
+# Step 4: 展平回應
+records = _flatten_response(resp.json())   # 找 events/data/items/records 等 key
+return {"data": pd.DataFrame(records)}</code></pre>
+
+      <h3 style="margin-top:24px">那 Prompt 在哪裡？</h3>
+      <p>Block 執行本身完全不用 LLM。Prompt 只在 <strong>Agent 建 pipeline 時</strong>介入：</p>
       <table>
-        <thead><tr><th>模式</th><th>Block</th><th>與 MCP 的關係</th></tr></thead>
+        <thead><tr><th>階段</th><th>誰做</th><th>做什麼</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>① 直接 hardcode，完全繞過 MCP</strong></td>
-            <td><code>block_process_history</code></td>
-            <td>直接讀 <code>ONTOLOGY_SIM_URL</code> 環境變數打 HTTP，<br>不查 mcp_definitions，改 DB 不影響它的行為</td>
-          </tr>
-          <tr>
-            <td><strong>② 1:1 專屬 MCP</strong></td>
-            <td><code>block_rework_request</code></td>
-            <td>對應 <code>rework_request</code> MCP（V53 同時 INSERT 兩者），<br>但 block 有自己的 executor，不走通用 dispatcher</td>
-          </tr>
-          <tr>
-            <td><strong>③ KIND_TO_MCP 對照表路由</strong></td>
-            <td><code>block_list_objects</code></td>
-            <td>內部有 hardcode 對照表：<br><code>tool→list_tools, lot→list_active_lots, step→list_steps, apc→list_apcs, spc→list_spcs</code><br>依 kind 參數選對應 MCP 名稱，再查 mcp_definitions 取 endpoint</td>
-          </tr>
-          <tr>
-            <td><strong>④ 通用動態路由</strong></td>
-            <td><code>block_mcp_call</code><br><code>block_mcp_foreach</code></td>
-            <td>Agent 填入 mcp_name 參數 → 去 Java <code>/internal/mcp-definitions</code> 查 endpoint → 打 HTTP<br>完全動態，支援任何已登記的 MCP</td>
-          </tr>
+          <tr><td>選哪個 block</td><td>Haiku（agentic_phase_loop）</td><td>LLM 看 block catalog 的 description，決定用 block_mcp_call 還是 block_process_history</td></tr>
+          <tr><td>填 mcp_name 參數</td><td>Haiku（construct phase）</td><td>LLM 從 mcp_definitions description 判斷要填 "get_process_summary" 還是其他 MCP</td></tr>
+          <tr><td>實際執行 block</td><td>pure code（BlockExecutor）</td><td>查 DB → 打 HTTP → 回 DataFrame，<strong>不呼叫 LLM</strong></td></tr>
         </tbody>
       </table>
 
       <h3 style="margin-top:24px">V54 mcp_auto：MCP 自動衍生 Block</h3>
-      <p>當 System MCP 在 admin 勾選「連動產生 Data Block」時，Java 原子寫入一個 block，<code>implementation.type = "mcp_proxy"</code>，sidecar 的 BlockRegistry 看到後自動 bind <code>McpProxyBlockExecutor</code>，內部走跟 block_mcp_call 一樣的 dispatch path。</p>
+      <p>admin 勾選「連動產生 Data Block」→ Java 原子寫入 <code>implementation.type = "mcp_proxy"</code> 的 block → sidecar BlockRegistry 自動 bind <code>McpProxyBlockExecutor</code>，內部走跟 block_mcp_call 一樣的 dispatch path。</p>
 
-      <h3 style="margin-top:24px">TRANSFORM / LOGIC / OUTPUT 與 MCP 的關係</h3>
-      <div class="note">
-        <strong>完全無關</strong>。這 53 個 block 都是純 Python/pandas 運算，input 是上游 DataFrame，output 也是 DataFrame 或 ChartDSL。它們不知道 MCP 的存在。
-      </div>
+      <h3 style="margin-top:24px">全貌總結</h3>
+      <pre><code>                      ┌─ Agent（Haiku）選 block + 填參數（有 prompt）
+                      ↓
+block_process_history ──→ ONTOLOGY_SIM_URL env （不查 DB）⚠
+block_rework_request  ──→ 自有 executor → POST /api/v1/rework_request
+block_list_objects    ──→ KIND_TO_MCP → block_mcp_call
+block_mcp_call        ──→ Java /internal/mcp-definitions → httpx GET/POST
+block_mcp_foreach     ──→ 同上，每 row 一次
 
-      <h3 style="margin-top:24px">關係總結圖</h3>
-      <pre><code>mcp_definitions (DB)
-    │
-    ├── block_list_objects  ──── KIND_TO_MCP 對照 ────→ 查 DB endpoint
-    ├── block_mcp_call      ──── mcp_name 參數 ────────→ 查 DB endpoint
-    ├── block_mcp_foreach   ──── mcp_name 參數 ────────→ 查 DB endpoint
-    └── mcp_auto block      ──── implementation.mcp_name→ McpProxyExecutor
+mcp_auto block        ──→ McpProxyBlockExecutor（同 block_mcp_call path）
 
-block_process_history  ──── ONTOLOGY_SIM_URL (env) ──→ 不查 DB ⚠
-block_rework_request   ──── 對應 rework_request MCP  ──→ 有自己的 executor
-
-TRANSFORM / LOGIC / OUTPUT (53 個)  ──── 與 MCP 完全無關</code></pre>
+TRANSFORM / LOGIC / OUTPUT（53 個）── 純 pandas，與 MCP 完全無關</code></pre>
     </div>
   </section>
 
