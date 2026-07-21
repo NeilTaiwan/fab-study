@@ -551,6 +551,8 @@
   <a href="#q32"><span class="nav-num">32</span>LLM 怎麼決定終止？會不會卡住？</a>
   <a href="#q33"><span class="nav-num">33</span>Haiku vs Sonnet：兩層架構</a>
   <a href="#q34"><span class="nav-num">34</span>20 user 測試一小時觸發多少次 LLM？</a>
+  <a href="#q35"><span class="nav-num">35</span>Block 設計：5 類 58 個，案例分析</a>
+  <a href="#q36"><span class="nav-num">36</span>Block 與 MCP 的關聯</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3435,6 +3437,189 @@ Chat Orchestrator（Sonnet）   ← 拿到結果，回應 user</code></pre>
       <div class="note" style="margin-top:12px">
         <strong>成本結構</strong>：Haiku 佔 85%+ 的呼叫次數，但單價遠低於 Sonnet。實際費用主要由 Sonnet 的 input/output token 數決定，不是純看 call 次數。
       </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q35 -->
+  <section class="qa-block" id="q35">
+    <div class="q-block">
+      <div class="q-label">Q35</div>
+      <div class="q-text">Block 設計：有哪些類型？各有多少？案例分析？</div>
+    </div>
+    <div class="a-block">
+      <p>Pipeline 是 100% 由 Block 組成的 DAG。每個 node 是一個 block 的實例，node 之間用 edge 連接資料流。共 <strong>5 大 category，58 個 block</strong>（來源：<code>pipeline_builder/seed.py</code> + <code>blocks/__init__.py</code> BUILTIN_EXECUTORS）。</p>
+
+      <h3 style="margin-top:20px">5 大 Category 總覽</h3>
+      <table>
+        <thead><tr><th>Category</th><th>數量</th><th>對應 build phase</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><strong>SOURCE</strong></td><td>4</td><td>raw_data</td><td>從外部拉原始資料</td></tr>
+          <tr><td><strong>TRANSFORM</strong></td><td>22</td><td>transform</td><td>重塑、過濾、計算、reshape 資料</td></tr>
+          <tr><td><strong>LOGIC</strong></td><td>8</td><td>verdict / scalar</td><td>統計分析、產生判斷結果</td></tr>
+          <tr><td><strong>OUTPUT</strong></td><td>23</td><td>chart / table / alarm</td><td>輸出圖表、表格、告警</td></tr>
+          <tr><td><strong>CHECK</strong></td><td>1</td><td>—</td><td>Skill pipeline 終止節點</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">SOURCE（4 個）</h3>
+      <table>
+        <thead><tr><th>Block</th><th>做什麼</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_process_history</code></td><td>拉製程事件歷史（SPC/APC/DC/Recipe/FDC/EC），直連 simulator（hardcode URL，不走 mcp_definitions）</td></tr>
+          <tr><td><code>block_rework_request</code></td><td>查 lot 的 rework 紀錄（photo 站 OOC 觸發）</td></tr>
+          <tr><td><code>block_list_objects</code></td><td>列出 tool/lot/step/apc/spc 清單（KIND_TO_MCP 對照表路由）</td></tr>
+          <tr><td><code>block_mcp_call</code></td><td>通用 MCP 呼叫（透過 mcp_definitions 動態查路由）</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">TRANSFORM（22 個，精選）</h3>
+      <table>
+        <thead><tr><th>Block</th><th>做什麼</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_filter</code></td><td>條件過濾（支援巢狀路徑 APC.parameters.etch_time_offset）</td></tr>
+          <tr><td><code>block_select</code></td><td>投影/重命名欄位（jq-lite 語法）</td></tr>
+          <tr><td><code>block_groupby_agg</code></td><td>group + 聚合（mean/sum/count/min/max/median）</td></tr>
+          <tr><td><code>block_spc_long_form</code></td><td>process_history wide → SPC long format（展開 spc_charts）</td></tr>
+          <tr><td><code>block_apc_long_form</code></td><td>process_history wide → APC long format</td></tr>
+          <tr><td><code>block_mcp_foreach</code></td><td>對上游每一筆 row 各呼叫一次 MCP，結果 merge 回來</td></tr>
+          <tr><td><code>block_rolling_window</code></td><td>滾動視窗統計（mean/std/min/max）</td></tr>
+          <tr><td><code>block_unpivot</code></td><td>Wide → Long（pandas melt）</td></tr>
+          <tr><td><code>block_compute</code></td><td>運算式 → 新欄位</td></tr>
+          <tr><td>其餘 13 個</td><td>join / union / sort / count_rows / histogram / pluck / unnest / time_bucket / delta / streak / ewma / find / shift_lag</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">LOGIC（8 個）</h3>
+      <table>
+        <thead><tr><th>Block</th><th>做什麼</th></tr></thead>
+        <tbody>
+          <tr><td><code>block_threshold</code></td><td>UCL/LCL 超標 → triggered: bool</td></tr>
+          <tr><td><code>block_weco_rules</code></td><td>SPC Western Electric 8 條規則檢查</td></tr>
+          <tr><td><code>block_consecutive_rule</code></td><td>連續 N 筆異常偵測 → verdict</td></tr>
+          <tr><td><code>block_cpk</code></td><td>製程能力 Cp/Cpk/Pp/Ppk → scalar</td></tr>
+          <tr><td><code>block_correlation</code></td><td>相關性矩陣（long format）</td></tr>
+          <tr><td><code>block_linear_regression</code></td><td>OLS 回歸 + 殘差 + CI</td></tr>
+          <tr><td><code>block_hypothesis_test</code></td><td>t-test / ANOVA / chi-square</td></tr>
+          <tr><td><code>block_any_trigger</code></td><td>多個 logic 節點 OR 聚合</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">OUTPUT（23 個）</h3>
+      <table>
+        <thead><tr><th>子類</th><th>Blocks</th></tr></thead>
+        <tbody>
+          <tr><td>基本圖</td><td>line_chart / bar_chart / scatter_chart / box_plot / histogram_chart / chart</td></tr>
+          <tr><td>SPC 專用</td><td>xbar_r（X̄/R + WECO）/ imr / ewma_cusum / pareto / probability_plot</td></tr>
+          <tr><td>進階多變量</td><td>splom / parallel_coords / heatmap_dendro / variability_gauge</td></tr>
+          <tr><td>晶圓空間</td><td>wafer_heatmap / defect_stack / spatial_pareto / trend_wafer_maps</td></tr>
+          <tr><td>複合面板</td><td>spc_panel / apc_panel</td></tr>
+          <tr><td>資料 &amp; 告警</td><td>data_view（table）/ alert</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">案例分析：Block 組合</h3>
+
+      <p><strong>案例 1：LOT-0123 SPC xbar 趨勢圖</strong></p>
+      <pre><code>block_process_history (lotID=LOT-0123)
+  ↓ [raw events 巢狀 JSON]
+block_spc_long_form
+  ↓ [每筆 chart value/ucl/lcl/is_ooc 展開成 row]
+block_filter (chart=xbar_chart)
+  ↓ [只留 xbar]
+block_xbar_r
+  ↓ [X̄/R 控制圖 + WECO R1-R8 標記]</code></pre>
+
+      <p><strong>案例 2：OOC 自動告警</strong></p>
+      <pre><code>block_process_history (toolID=EQP-01)
+  ↓
+block_spc_long_form
+  ↓
+block_threshold (column=is_ooc, op=== , value=true)
+  ↓ [triggered: bool]
+block_alert
+  ↓ [告警紀錄]</code></pre>
+
+      <p><strong>案例 3：多台機台 APC box plot 對比</strong></p>
+      <pre><code>block_list_objects (kind=tool)
+  ↓ [機台清單 DataFrame]
+block_mcp_foreach (mcp=get_process_info)
+  ↓ [每台各拉一次資料，merge 回來]
+block_apc_long_form
+  ↓
+block_filter (apcID=APC-003)
+  ↓
+block_box_plot (x=toolID, y=etch_time_offset)</code></pre>
+
+      <p><strong>案例 4：製程能力分析</strong></p>
+      <pre><code>block_process_history (step=STEP_010)
+  ↓
+block_spc_long_form
+  ↓
+block_filter (chart=xbar_chart)
+  ↓
+block_cpk (column=value, usl=..., lsl=...)
+  ↓ [Cp/Cpk scalar]
+block_data_view   ← 顯示為 table</code></pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q36 -->
+  <section class="qa-block" id="q36">
+    <div class="q-block">
+      <div class="q-label">Q36</div>
+      <div class="q-text">Block 與 MCP 的關聯是什麼？</div>
+    </div>
+    <div class="a-block">
+      <p>大多數 block 與 MCP 無關。只有 SOURCE 裡的幾個 block 有關聯，且關聯方式各不相同。</p>
+
+      <h3 style="margin-top:16px">四種關係模式</h3>
+
+      <table>
+        <thead><tr><th>模式</th><th>Block</th><th>與 MCP 的關係</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>① 直接 hardcode，完全繞過 MCP</strong></td>
+            <td><code>block_process_history</code></td>
+            <td>直接讀 <code>ONTOLOGY_SIM_URL</code> 環境變數打 HTTP，<br>不查 mcp_definitions，改 DB 不影響它的行為</td>
+          </tr>
+          <tr>
+            <td><strong>② 1:1 專屬 MCP</strong></td>
+            <td><code>block_rework_request</code></td>
+            <td>對應 <code>rework_request</code> MCP（V53 同時 INSERT 兩者），<br>但 block 有自己的 executor，不走通用 dispatcher</td>
+          </tr>
+          <tr>
+            <td><strong>③ KIND_TO_MCP 對照表路由</strong></td>
+            <td><code>block_list_objects</code></td>
+            <td>內部有 hardcode 對照表：<br><code>tool→list_tools, lot→list_active_lots, step→list_steps, apc→list_apcs, spc→list_spcs</code><br>依 kind 參數選對應 MCP 名稱，再查 mcp_definitions 取 endpoint</td>
+          </tr>
+          <tr>
+            <td><strong>④ 通用動態路由</strong></td>
+            <td><code>block_mcp_call</code><br><code>block_mcp_foreach</code></td>
+            <td>Agent 填入 mcp_name 參數 → 去 Java <code>/internal/mcp-definitions</code> 查 endpoint → 打 HTTP<br>完全動態，支援任何已登記的 MCP</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:24px">V54 mcp_auto：MCP 自動衍生 Block</h3>
+      <p>當 System MCP 在 admin 勾選「連動產生 Data Block」時，Java 原子寫入一個 block，<code>implementation.type = "mcp_proxy"</code>，sidecar 的 BlockRegistry 看到後自動 bind <code>McpProxyBlockExecutor</code>，內部走跟 block_mcp_call 一樣的 dispatch path。</p>
+
+      <h3 style="margin-top:24px">TRANSFORM / LOGIC / OUTPUT 與 MCP 的關係</h3>
+      <div class="note">
+        <strong>完全無關</strong>。這 53 個 block 都是純 Python/pandas 運算，input 是上游 DataFrame，output 也是 DataFrame 或 ChartDSL。它們不知道 MCP 的存在。
+      </div>
+
+      <h3 style="margin-top:24px">關係總結圖</h3>
+      <pre><code>mcp_definitions (DB)
+    │
+    ├── block_list_objects  ──── KIND_TO_MCP 對照 ────→ 查 DB endpoint
+    ├── block_mcp_call      ──── mcp_name 參數 ────────→ 查 DB endpoint
+    ├── block_mcp_foreach   ──── mcp_name 參數 ────────→ 查 DB endpoint
+    └── mcp_auto block      ──── implementation.mcp_name→ McpProxyExecutor
+
+block_process_history  ──── ONTOLOGY_SIM_URL (env) ──→ 不查 DB ⚠
+block_rework_request   ──── 對應 rework_request MCP  ──→ 有自己的 executor
+
+TRANSFORM / LOGIC / OUTPUT (53 個)  ──── 與 MCP 完全無關</code></pre>
     </div>
   </section>
 
