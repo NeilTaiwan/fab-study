@@ -555,6 +555,8 @@
   <a href="#q36"><span class="nav-num">36</span>Block 與 MCP 的關聯</a>
   <a href="#q37"><span class="nav-num">37</span>真正的 MCP protocol 在哪裡用？</a>
   <a href="#q38"><span class="nav-num">38</span>mcp_pipeline_builder 是 Claude cowork 入口</a>
+  <a href="#q39"><span class="nav-num">39</span>mcp_definitions 的資料來源</a>
+  <a href="#q40"><span class="nav-num">40</span>get_process_info / list_tools / get_process_summary 是真的 MCP 嗎？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3750,6 +3752,90 @@ private = await _private_keys()   # GET /api/v1/mcp-capabilities
 
       <div class="note" style="margin-top:16px">
         <strong>定位總結</strong>：mcp_pipeline_builder 是讓 Claude Desktop 當開發者/測試者使用的後門入口，透過標準 MCP protocol 暴露平台全部操作能力，但危險操作仍需真人在 GUI 確認（handoff 機制）。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q39 -->
+  <section class="qa-block" id="q39">
+    <div class="q-block">
+      <div class="q-label">Q39</div>
+      <div class="q-text">mcp_definitions 的資料來源有哪些？</div>
+    </div>
+    <div class="a-block">
+      <p>共 4 條路徑，其中最核心的 3 個 MCP 來源不明。</p>
+
+      <h3 style="margin-top:16px">1. Flyway Migration SQL（有明文 INSERT）</h3>
+      <table>
+        <thead><tr><th>Migration</th><th>寫入的 MCP</th></tr></thead>
+        <tbody>
+          <tr><td>V17</td><td><code>list_active_lots</code>、<code>list_steps</code>、<code>list_apcs</code>、<code>list_spcs</code></td></tr>
+          <tr><td>V53</td><td><code>rework_request</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">2. 來源不明（找不到任何 INSERT）</h3>
+      <p><code>list_tools</code>、<code>get_process_info</code>、<code>get_process_summary</code> — V50 的 agent_knowledge 已把這三個名字當成理所當然地引用，代表比 V17 更早存在。翻遍所有 migration、BootstrapSeeder、Java 程式碼，<strong>找不到任何 INSERT</strong>。只存在於 prod DB，來源無法從 code 追溯。</p>
+      <div class="note">
+        CLAUDE.md 說「System MCPs 每次啟動自動 sync（canonical list in main.py）」，但 main.py 裡找不到對應實作。可能是文件過時或功能已移除。
+      </div>
+
+      <h3 style="margin-top:20px">3. Admin GUI → McpDefinitionController</h3>
+      <pre><code>// POST /api/v1/mcp-definitions
+McpDefinitionEntity saved = repository.save(e);</code></pre>
+      <p>管理員在 UI 手動新增。</p>
+
+      <h3 style="margin-top:20px">4. mcp_auto（V54）→ MCPDerivativeService</h3>
+      <pre><code>// MCP 勾選 produces_block=true 時自動寫入
+McpDefinitionEntity mcp = mcpRepo.save(buildMcp(req));</code></pre>
+      <p>LLM 從 MCP description 自動產生 Block + Skill 草稿時同步寫入。</p>
+
+      <div class="note" style="margin-top:12px">
+        <strong>對比</strong>：pb_blocks（58 個 block）有明文 canonical 來源（<code>seed.py</code> → <code>pb_blocks_canonical.sql</code>）；mcp_definitions <strong>沒有</strong>對應的 canonical SQL，核心 MCP 來源不透明。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q40 -->
+  <section class="qa-block" id="q40">
+    <div class="q-block">
+      <div class="q-label">Q40</div>
+      <div class="q-text">get_process_info / list_tools / get_process_summary 是真的 MCP 嗎？</div>
+    </div>
+    <div class="a-block">
+      <p>都是「假的」——跟所有 mcp_definitions 的 row 一樣，本質只是 HTTP endpoint 的 DB 紀錄，跟 Claude MCP protocol 零關係。但三個的實際使用狀況各不同：</p>
+
+      <table>
+        <thead><tr><th>名稱</th><th>在 mcp_definitions？</th><th>實際怎麼被用</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>get_process_info</code></td>
+            <td>✅ 有（V30/V84 有 UPDATE）</td>
+            <td><strong>沒人透過 DB 查它</strong>。block_process_history hardcode URL 直接打，完全繞過這筆 row。這筆 row 實質上是廢的。</td>
+          </tr>
+          <tr>
+            <td><code>list_tools</code></td>
+            <td>✅ 有</td>
+            <td>block_list_objects → KIND_TO_MCP → block_mcp_call → <strong>有查 DB</strong> 拿 endpoint，正常運作。</td>
+          </tr>
+          <tr>
+            <td><code>get_process_summary</code></td>
+            <td>✅ 有</td>
+            <td>block_mcp_call(mcp_name="get_process_summary") → <strong>有查 DB</strong> 拿 endpoint，正常運作。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">重新整理：真正被用到 vs 被繞過</h3>
+      <pre><code>透過 mcp_definitions 路由（有實際作用）：
+  list_tools, list_active_lots, list_steps, list_apcs, list_spcs
+  get_process_summary, rework_request
+
+存在 DB 但被繞過（這筆 row 沒意義）：
+  get_process_info → block_process_history hardcode ONTOLOGY_SIM_URL，不查 DB</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        <strong>本質提醒</strong>：mcp_definitions 整張表都是「假 MCP」——只是一張 API endpoint mapping 表，description 給 LLM 看來決定要用哪個，endpoint_url 給 code 執行時打 HTTP 用。和 Claude MCP protocol 零關係，只是借用了這個名字。
       </div>
     </div>
   </section>
