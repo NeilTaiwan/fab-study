@@ -562,6 +562,8 @@
   <a href="#q43"><span class="nav-num">43</span>Planner 語意解析依據：它怎麼理解 user 需求？欄位名從哪來？</a>
   <a href="#q44"><span class="nav-num">44</span>各 Agent 角色的完整 Prompt 是什麼？</a>
   <a href="#q45"><span class="nav-num">45</span>Builder ReAct Loop：每個行動都是一次獨立 LLM call 嗎？</a>
+  <a href="#q46"><span class="nav-num">46</span>上游資料誰決定？資料從哪裡撈？自然語言怎麼變成 params？</a>
+  <a href="#q47"><span class="nav-num">47</span>沒有 DB Schema 文件作為解釋來源，這樣危險嗎？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -4224,6 +4226,110 @@ Repairer（發生時）：  1–2 次（Haiku）
       <div class="note" style="margin-top:12px">
         <strong>設計原則</strong>：每個 round 只發一個 tool call（prompt 明確規定），是為了讓系統在每次行動後都能插入 preview snapshot 與 verifier 資訊，確保 LLM 每輪都能看到最新的 canvas 狀態。如果允許一次 emit 多個 action，中間狀態會混亂，debug 也更難。
       </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q46 -->
+  <section class="qa-block" id="q46">
+    <div class="q-block">
+      <div class="q-label">Q46</div>
+      <div class="q-text">上游資料誰決定？資料從哪裡撈？自然語言怎麼變成 params？</div>
+    </div>
+    <div class="a-block">
+      <p>Builder 看上游 DataFrame 的欄位才決定後續怎麼 filter/transform — 那麼上游的資料是誰決定、從哪裡來的？答案是：<strong>Builder 自己在 raw_data phase 決定的</strong>，依據是 Planner 給的 phase goal + block param_schema。</p>
+
+      <h3>完整語意對應鏈</h3>
+      <pre><code>user: "看 EQP-08 xbar 趨勢"
+         ↓
+Planner → p1 goal: "取得 EQP-08 過去 7 天的歷史資料" (expected: raw_data)
+         ↓
+Builder 做 p1（raw_data phase）：
+  round 1: inspect_block_doc("block_process_history")
+           → param_schema: tool_id (機台 ID)、days (天數)
+  round 2: add_node("block_process_history", {tool_id: "EQP-08", days: 7})
+           → 系統執行 → 打 ontology_simulator:8012 → 拿回 DataFrame
+               欄位：eventTime / tool_id / spc_charts (nested) / spc_status ...
+         ↓
+Builder 做 p2（transform phase）：
+  round 3: inspect_node_output(n1, n_rows=2)
+           → 直接看到真實欄位名 "spc_charts"、"chart_name"
+  round 4: add_node("block_unnest", {column: "spc_charts", filter_key: "chart_name", filter_val: "xbar"})</code></pre>
+
+      <h3 style="margin-top:20px">"EQP-08" 怎麼從自然語言變成 <code>tool_id="EQP-08"</code>？</h3>
+      <p>Builder 的 prompt 裡有 Planner 的 phase goal（「取得 EQP-08 過去 7 天的歷史資料」）和原始 user instruction。LLM 讀 phase goal + block 的 param_schema 後，自行做實體抽取：</p>
+      <pre><code>"EQP-08"  →  tool_id 的值（對比 param_schema 知道機台用 tool_id）
+"7 天"    →  days=7 或 start_date 計算</code></pre>
+      <p>這個抽取沒有 NER 模型或規則，純粹是 LLM 讀 phase goal + param_schema 後的推斷。</p>
+
+      <h3 style="margin-top:20px">語意解析責任分配</h3>
+      <table>
+        <thead><tr><th>層</th><th>做什麼</th><th>依據</th></tr></thead>
+        <tbody>
+          <tr><td>Planner</td><td>把 user 需求翻成 phase 目標（業務語言）</td><td>user instruction（直接文字）</td></tr>
+          <tr><td>Builder raw_data phase</td><td>選 SOURCE block、填 entity params（tool_id / days）</td><td>phase goal + block param_schema</td></tr>
+          <tr><td>Builder 後續 phase</td><td>決定欄位名稱做 transform/filter</td><td>inspect_node_output 看到的真實 DataFrame column</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>關鍵</strong>：第一關（資料從哪裡來、用哪個 SOURCE block）是 Builder 的 raw_data phase 決定的，依據是 phase goal 裡的業務實體。第二關以後的欄位名稱判斷，是看了上游真實資料之後才決定的——不是純猜。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q47 -->
+  <section class="qa-block" id="q47">
+    <div class="q-block">
+      <div class="q-label">Q47</div>
+      <div class="q-text">沒有 DB Schema 文件作為解釋來源，這樣危險嗎？</div>
+    </div>
+    <div class="a-block">
+      <p>是的，這是架構上真實存在的弱點。現有機制全部仰賴人工維護的說明文件，沒有 schema 自動驗證。</p>
+
+      <h3>現有「文件來源」與問題</h3>
+      <table>
+        <thead><tr><th>機制</th><th>問題</th></tr></thead>
+        <tbody>
+          <tr><td>block <code>column_docs</code>（手寫）</td><td>人工維護；block 行為改了沒同步 → 過時文件誤導 LLM</td></tr>
+          <tr><td><code>inspect_node_output</code>（看真實資料）</td><td>只有 2 行 sample；欄位值的語意還是要靠 LLM 推斷</td></tr>
+          <tr><td>MCP <code>description</code>（DB 欄位說明）</td><td>有寫欄位語意，但格式不統一、品質依人而定</td></tr>
+          <tr><td><code>agent_knowledge</code> RAG</td><td>通用領域知識（"APC 是 nested"），非逐欄位型別與值域定義</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">完全沒有的東西</h3>
+      <ul style="margin-left:20px; margin-top:8px; line-height:2">
+        <li>完整 data dictionary（欄位名 → 型別 → 值域 → 語意 → 常見用法）</li>
+        <li>Schema 版本控制（欄位改名時自動通知相依 block）</li>
+        <li>Param 填入時的 schema validation（欄位名是否存在）</li>
+      </ul>
+
+      <h3 style="margin-top:16px">危險程度評估</h3>
+      <pre><code>高風險場景：
+  - user 說「看製程溫度」→ 欄位可能叫 etch_temp / temperature / temp_val（哪個？）
+  - ontology 改了欄位名 → block column_docs 沒更新 → LLM 填舊名 → 空 DataFrame
+  - 新人寫 MCP description 沒列清楚回傳欄位 → Builder 只能靠 inspect 猜
+
+低風險場景：
+  - 固定 block（如 block_process_history）欄位穩定、column_docs 有人維護
+  - inspect_node_output 兜底，LLM 看真實資料後幾乎不會猜錯欄位名</code></pre>
+
+      <h3 style="margin-top:16px">CLAUDE.md 有規範但無強制</h3>
+      <p>CLAUDE.md Principle 2 明確要求：</p>
+      <blockquote style="border-left:3px solid var(--accent); padding-left:12px; color:var(--text2); margin:12px 0">
+        每個 System MCP 的 description 欄位必須包含回傳欄位名稱和型別、關鍵欄位的語義
+      </blockquote>
+      <p>但這是人工規範，沒有自動驗證機制。現狀是「有制度、執行靠自律」。</p>
+
+      <h3 style="margin-top:16px">如果要補這個洞，正確做法</h3>
+      <table>
+        <thead><tr><th>方案</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>Data Dictionary</td><td>把 ontology_simulator 每個 API endpoint 的 response schema 寫成機器可讀文件，Builder 可查</td></tr>
+          <tr><td>Schema 自動注入</td><td><code>inspect_block_doc</code> 回傳時同時附上「上次成功執行的 column 清單 + 型別」（從執行歷史快取）</td></tr>
+          <tr><td>MCP description 強制格式</td><td>每個 MCP description 必須含 return schema 區塊（欄位名 + 型別 + 值域），並設 CI lint 驗證</td></tr>
+        </tbody>
+      </table>
     </div>
   </section>
 
