@@ -557,6 +557,9 @@
   <a href="#q38"><span class="nav-num">38</span>mcp_pipeline_builder 是 Claude cowork 入口</a>
   <a href="#q39"><span class="nav-num">39</span>mcp_definitions 的資料來源</a>
   <a href="#q40"><span class="nav-num">40</span>get_process_info / list_tools / get_process_summary 是真的 MCP 嗎？</a>
+  <a href="#q41"><span class="nav-num">41</span>Pipeline Build Agent 分層設計（Planner / Builder / Verifier / Repairer）</a>
+  <a href="#q42"><span class="nav-num">42</span>Verifier 結構 vs 語意邊界：它檢查什麼、不檢查什麼</a>
+  <a href="#q43"><span class="nav-num">43</span>Planner 語意解析依據：它怎麼理解 user 需求？欄位名從哪來？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -3836,6 +3839,168 @@ McpDefinitionEntity mcp = mcpRepo.save(buildMcp(req));</code></pre>
 
       <div class="note" style="margin-top:12px">
         <strong>本質提醒</strong>：mcp_definitions 整張表都是「假 MCP」——只是一張 API endpoint mapping 表，description 給 LLM 看來決定要用哪個，endpoint_url 給 code 執行時打 HTTP 用。和 Claude MCP protocol 零關係，只是借用了這個名字。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q41 -->
+  <section class="qa-block" id="q41">
+    <div class="q-block">
+      <div class="q-label">Q41</div>
+      <div class="q-text">Pipeline Build Agent 分層設計（Planner / Builder / Verifier / Repairer）</div>
+    </div>
+    <div class="a-block">
+      <p>從 user 下建構指令到 pipeline 完成，共有 <strong>4 個 agent 層</strong>，每層職責嚴格分離，全部跑 Haiku（除非 override）。</p>
+
+      <table>
+        <thead><tr><th>層</th><th>Node / File</th><th>模型</th><th>職責</th><th>輸入</th><th>輸出</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>① Planner</strong></td>
+            <td><code>goal_plan_node</code><br><small>graph_build/nodes/goal_plan.py</small></td>
+            <td>Haiku</td>
+            <td>把 user 需求翻成 <strong>goal-oriented phases</strong>（純 intention，不挑 block）</td>
+            <td>instruction、canvas snapshot、agent_knowledge (RAG)</td>
+            <td>phases 陣列：每 phase 含 goal、expected（raw_data/transform/chart/…）、expected_output</td>
+          </tr>
+          <tr>
+            <td><strong>② Builder</strong></td>
+            <td><code>agentic_phase_loop</code><br><small>graph_build/nodes/agentic_phase_loop.py</small></td>
+            <td>Haiku</td>
+            <td>針對每個 phase 做 <strong>ReAct loop</strong>：選 block → execute → 看結果 → 決定下一步</td>
+            <td>phase 目標、block catalog（含 description + param_schema）、前置 phase 的輸出資料</td>
+            <td>已 execute 的 DAG nodes；中間 DataFrame 結果</td>
+          </tr>
+          <tr>
+            <td><strong>③ Verifier</strong></td>
+            <td><code>phase_verifier</code><br><small>graph_build/nodes/phase_verifier.py</small></td>
+            <td><strong>純 code</strong>（F2 用 Haiku vision）</td>
+            <td>結構性驗證：executor error、孤立節點、葉節點、phase kind 覆蓋、chart 渲染 + vision judge</td>
+            <td>建好的 DAG nodes + edges；phase 目標</td>
+            <td>ACCEPT / REJECT（附 feedback），路由到下一 node</td>
+          </tr>
+          <tr>
+            <td><strong>④ Repairer</strong></td>
+            <td><code>phase_revise</code><br><small>graph_build/nodes/phase_revise.py</small></td>
+            <td>Haiku</td>
+            <td>收到 REJECT feedback 後，修改 block params 或換 block，重新 execute</td>
+            <td>Verifier feedback、現有 nodes、block catalog</td>
+            <td>修改後的 nodes；再進 Verifier</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">流程圖（一個 phase 的完整循環）</h3>
+      <pre><code>Planner → [user confirm gate] → Builder (ReAct loop)
+                                      ↓
+                                  Verifier
+                                  ↙       ↘
+                              ACCEPT      REJECT
+                                ↓             ↓
+                           next phase      Repairer
+                                               ↓
+                                           Builder (retry)
+                                               ↓
+                                           Verifier
+                                  (最多 3 次循環後強制 take_over)</code></pre>
+
+      <h3 style="margin-top:20px">LLM 使用次數（建一個 pipeline 的估算）</h3>
+      <table>
+        <thead><tr><th>步驟</th><th>Haiku 次數（順利）</th><th>備註</th></tr></thead>
+        <tbody>
+          <tr><td>Planner（goal_plan）</td><td>1</td><td>一次出全部 phases</td></tr>
+          <tr><td>Builder（每 phase）</td><td>1–3 × N phases</td><td>ReAct loop per phase；通常 1–2 round</td></tr>
+          <tr><td>Verifier</td><td>0（程式碼）＋偶爾 1 Haiku vision</td><td>F2 chart vision judge 用 Haiku</td></tr>
+          <tr><td>Repairer（發生時）</td><td>1–2 per reject</td><td>Verifier reject 才觸發</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>Plan Patcher（額外層）</strong>：若 Builder 卡死無法完成某 phase，<code>plan_patch</code> node 可以修改 plan（拆 phase 或降低目標），再重新進 Builder。這是最後防線，較少觸發。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q42 -->
+  <section class="qa-block" id="q42">
+    <div class="q-block">
+      <div class="q-label">Q42</div>
+      <div class="q-text">Verifier 結構 vs 語意邊界：它檢查什麼、不檢查什麼</div>
+    </div>
+    <div class="a-block">
+      <p>Verifier（<code>phase_verifier.py</code>）是 <strong>純結構性保證</strong>，不是語意正確性保證。v30.20 明確移除了 rows 品質閘門與 LLM-judge，改為「runtime concern」。</p>
+
+      <table>
+        <thead><tr><th>檢查項目</th><th>誰負責</th><th>方式</th></tr></thead>
+        <tbody>
+          <tr><td>block executor 是否拋錯（Check B）</td><td>✅ Verifier</td><td>讀 error / validation_error 欄位</td></tr>
+          <tr><td>孤立節點（無入邊，Check C）</td><td>✅ Verifier</td><td>graph traversal</td></tr>
+          <tr><td>葉節點（非 output 無出邊，Check C2）</td><td>✅ Verifier</td><td>graph traversal；3 次後強制 prune</td></tr>
+          <tr><td>phase kind 覆蓋（Check A，STRICT mode）</td><td>✅ Verifier</td><td>terminal block 的 covers 集合對比 expected</td></tr>
+          <tr><td>chart 最終渲染 + vision judge（F2）</td><td>✅ Verifier（Haiku）</td><td>Playwright 截圖 → Haiku 看「有沒有空圖」</td></tr>
+          <tr><td>chart encoding gap（P2a）</td><td>✅ Verifier</td><td>phase 說「顏色區分」但 series_field 未設 → REJECT</td></tr>
+          <tr><td><strong>欄位名稱是否正確</strong></td><td>❌ 無人在 build 時檢查</td><td>—</td></tr>
+          <tr><td><strong>filter 條件語意對不對</strong></td><td>❌ 無人在 build 時檢查</td><td>—</td></tr>
+          <tr><td><strong>資料行數是否合理</strong></td><td>❌ v30.20 已移除</td><td>原本有，現已刪</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">語意錯誤的實際後果</h3>
+      <p>若 Builder 把欄位名填錯（e.g. 應該是 <code>temperature</code> 但寫成 <code>temp</code>）：</p>
+      <pre><code>Builder 建 block → Verifier 全部 PASS（結構正確）
+→ Pipeline 執行：transform block 過濾出空 DataFrame
+→ Chart 顯示空圖 or 全 NaN
+→ 這時 F2 vision judge 才有機會抓到（空圖 → REJECT）
+→ 但若「數值有出來只是錯的」→ vision judge 也抓不到 → user 直接看到錯誤結果</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        <strong>設計理由</strong>：欄位名稱驗證需要真的去打 ontology 拿資料才能確認（等於執行 pipeline），那就不是 "verify" 而是 "execute"。Verifier 的價值正是「純 code、快速、不用 LLM」，加語意驗證會讓整個快速回饋迴圈失效。Vision judge 是唯一的語意層 safety net，但只抓視覺異常，不抓數值錯誤。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q43 -->
+  <section class="qa-block" id="q43">
+    <div class="q-block">
+      <div class="q-label">Q43</div>
+      <div class="q-text">Planner 語意解析依據：它怎麼理解 user 需求？欄位名從哪來？</div>
+    </div>
+    <div class="a-block">
+      <p><strong>Planner 刻意不碰欄位名稱。</strong> <code>goal_plan.py</code> 的 system prompt 明確禁止出現任何欄位、block 名稱或操作動詞。</p>
+
+      <h3>Planner 的輸入</h3>
+      <table>
+        <thead><tr><th>輸入</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>user instruction</td><td>直接文字，e.g. "查 EQP-08 最近 7 天 xbar 趨勢"</td></tr>
+          <tr><td>canvas snapshot</td><td>已有的 nodes/edges（修改模式下的增量建構）</td></tr>
+          <tr><td><code>agent_knowledge</code>（RAG）</td><td>領域知識片段，e.g. "參數分佈 chart 用 flat-mode 別 unnest"；從 <code>build_knowledge_hint()</code> 注入</td></tr>
+          <tr><td>prior instruction</td><td>上一輪 instruction（follow-up 修改時對照用）</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">Planner 的輸出（純 business intention）</h3>
+      <pre><code>✅ "取得 EQP-08 過去 7 天的歷史資料"  (raw_data)
+✅ "從中聚焦出 xbar 圖表的時序測量值"  (transform)
+✅ "繪製 xbar 圖表的趨勢"              (chart)
+
+❌ 禁止出現：process_history / spc_summary / eventTime / ooc_count / filter_col / unnest</code></pre>
+
+      <h3 style="margin-top:16px">欄位名是 Builder 在填的</h3>
+      <p>Builder（<code>agentic_phase_loop</code>）拿到 phase 的 intention 後，才根據 block param schema 和 MCP description 去 <strong>猜填</strong> 具體欄位名稱。</p>
+
+      <table>
+        <thead><tr><th>層</th><th>知道欄位名？</th><th>如何知道</th></tr></thead>
+        <tbody>
+          <tr><td>Planner</td><td>❌ 故意不知道</td><td>—（只看業務語言）</td></tr>
+          <tr><td>Builder</td><td>⚠️ 間接推斷</td><td>Block description + MCP description 說「回傳 spc_status, eventTime…」→ LLM 猜</td></tr>
+          <tr><td>Verifier</td><td>❌ 不驗證</td><td>—（只看結構）</td></tr>
+          <tr><td>Runtime executor</td><td>✅ 真正知道</td><td>拿到 DataFrame 才知道 column 實際叫什麼</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>語意錯誤窗口</strong>：Builder 猜錯欄位名 → pipeline build 成功 → runtime 執行才出問題（空 DataFrame 或數值偏差）。<code>agent_knowledge</code> RAG 是目前唯一能「提示正確欄位語意」的機制，但它注入的是通用領域知識（e.g. "APC 資料是 nested"），不是逐 MCP 的欄位名驗證。
       </div>
     </div>
   </section>
