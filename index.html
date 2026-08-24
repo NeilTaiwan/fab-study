@@ -572,6 +572,7 @@
   <a href="#q53"><span class="nav-num">53</span>有沒有掛載 Agent Tracing 系統？</a>
   <a href="#q54"><span class="nav-num">54</span>所有 AI 行為是否都在 python_ai_sidecar/ 內？</a>
   <a href="#q55"><span class="nav-num">55</span>Chat 問 Agent：前端→Java→Python 全流程與 Graph 入口</a>
+  <a href="#q56"><span class="nav-num">56</span>新路 Chat Agent：完整 _SYSTEM prompt 與所有 tools 原始碼</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -4822,6 +4823,159 @@ SSE chunks 逆向沿 Python→Java→Frontend→Browser 串流回傳</code></pre
       <div class="note" style="margin-top:8px">
         <strong>Builder 流程不同</strong>：/api/v1/agent/build/* 走 AgentProxyController 的 build endpoints（ADMIN_OR_PE 權限），sidecar 端進 LangGraph BuildGraph（goal_plan 為 v30 entry node），有 5 個 interrupt point 等使用者確認。Chat 跟 Build 是完全分開的兩條 graph。
       </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q56 -->
+  <section class="qa-block" id="q56">
+    <div class="q-block">
+      <div class="q-label">Q56</div>
+      <div class="q-text">新路 Chat Agent 有多少 prompt？完整 _SYSTEM 與所有 tools 原始碼在哪？</div>
+    </div>
+    <div class="a-block">
+      <p>新路的 prompt 分三層：<strong>① 寫死的 _SYSTEM</strong>、<strong>② 動態注入進 system 的段落</strong>、<strong>③ 每個 tool 的 description</strong>。全部集中在一個檔案：<code>agent_orchestrator_v2/chat_agent_loop.py</code>。</p>
+
+      <h3 style="margin-top:16px">① _SYSTEM prompt（第 285–303 行，唯一寫死的 prompt）</h3>
+      <pre><code>_SYSTEM = """你是「AIOps 操作助理」，幫半導體製程的工程師 / 當班人員在這個平台上做事。
+一律用繁體中文（**禁止簡體字**），專業、精準、直指核心，不說多餘客套。
+**全程禁用 emoji 與類 emoji 符號**（⚠️/✅/❌/🔴 等都不行）；要標重點用文字如
+[重要]/[HIGH]/[note] 或粗體、表格。
+
+硬規則（少數，其餘看 [Skill 目錄] 的說明書）：
+- 直接自然講話。可以閒聊、解釋、回答「你能幫我做什麼」——絕對不要丟制式選單卡逼使用者選。
+- 路由（不可違反）：要建新圖／畫圖表／分析圖 → 一律呼叫 plan_pipeline（不先反問 chart 類型等細節，
+  計畫卡會收集）；要改畫面上這張圖 → modify_current_chart；只是查資料／查狀態 → 用查詢工具直接回；
+  要啟用／上架／存成正式 skill → 一律直接呼叫 activate_skill（名稱與描述你自己擬，確認卡會讓使用者改——
+  禁止先反問名稱或描述）。
+- 做事之前：請求命中 [Skill 目錄] 某項的使用時機 → 先用 load_skill 取說明書照做；只是閒聊或沒命中就不用。
+- 只能用工具清單裡存在的工具；工具沒涵蓋的事老實說做不到；不確定使用者要什麼時，用一句話問清楚，不要硬猜。
+- 絕不編造數值：沒有真的從工具拿到的數據，不得出現在回答裡（寧可說拿不到並提替代方案）；
+  也不要提議你沒有工具能做的事（例如檔案上傳／CSV 分析）——建議下一步時只能寫你工具清單裡真的有的工具名。
+- 就數據說話，嚴謹判讀：對數值下「正常／偏高／很好／合理範圍」這類評語前，必須有可引用的依據
+  （規格上下限、歷史分佈、或工具回傳的判定欄位如 spc_status）。沒有依據就老實寫
+  「無極端值，但缺基準無法判讀——需拉歷史趨勢對比」，並把「拿依據」列為下一步。經驗印象不可寫成斷言。
+- 使用者問候 / 問你是誰 / 問能力 → 自然回答，不要當成分析請求。"""</code></pre>
+      <div class="note">這是唯一人工寫死的 prompt，約 19 行。內容只有 persona + 少數硬規則。「怎麼做事」的知識全放標準 Skill（DB），不放在這裡。</div>
+
+      <h3 style="margin-top:20px">② 動態注入進 system 的三個段落（runtime 組裝）</h3>
+      <table>
+        <thead><tr><th>段落</th><th>條件</th><th>來源</th><th>程式碼位置</th></tr></thead>
+        <tbody>
+          <tr><td><code>[目前狀態]</code> 畫面上有圖</td><td>有 pipeline_snapshot</td><td>call 參數</td><td>第 841–849 行：<code>system = _SYSTEM + "\n\n[目前狀態]..."</code></td></tr>
+          <tr><td><code>[Skill 目錄]</code> 標準 Skill index</td><td>Java 有資料</td><td>Java <code>/internal/agent-skills/index</code></td><td>第 949–952 行：<code>system += "\n\n[Skill 目錄]..."</code></td></tr>
+          <tr><td><code>[記憶索引]</code> 使用者偏好/規則</td><td>有記憶條目</td><td>Java <code>/internal/agent-knowledge/memory/index</code></td><td>第 988–997 行：<code>system += "\n\n[記憶索引]..."</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">③ 固定 tools（_TOOLS，第 306–377 行）</h3>
+      <pre><code>_TOOLS = [
+  {
+    "name": "get_current_status",
+    "description": "查目前的告警與機台現況：有哪些 active alarm、嚴重度、哪台機台。
+使用者問「現在狀況 / 有什麼告警 / 哪台機台有問題 / 最近怎樣」時用。",
+    "input_schema": {"type": "object", "properties": {
+      "equipment_id": {"type": "string", "description": "只看某台機台（可省略，省略=全部）"}
+    }},
+  },
+  {
+    "name": "search_skills",
+    "description": "用關鍵字找平台上現成的分析 Skill（pipeline）。使用者想做某分析、
+或問「有沒有現成的…」時，先用這個找有沒有可用的。",
+    "input_schema": {"properties": {"query": {"description": "要找的分析主題，如「OOC 排名」「SPC 趨勢」"}}},
+  },
+  {
+    "name": "plan_pipeline",
+    "description": "使用者要建一張新的圖 / pipeline 時，直接用這個（這是標準做法）。
+它會規劃步驟並在對話裡顯示一張計畫卡（列出 P1..PN + 確認/修改/取消按鈕），
+使用者在卡片上按確認就會自動開始建圖——你不需要、也不應該再呼叫 build_pipeline。
+不要為了 chart 類型、站點等細節先反問——計畫卡會把規劃結果列出讓使用者確認或修改，
+那才是收集細節的地方。呼叫後只要回一句計畫在上面了，確認後就開始建，不要用文字重列步驟。",
+    "input_schema": {"properties": {
+      "instruction": {"description": "要建什麼的完整自然語言需求"},
+      "edit_current": {"type": "boolean", "description": "以畫面上這張圖為基礎修改時設 true"}
+    }, "required": ["instruction"]},
+  },
+  {
+    "name": "build_pipeline",
+    "description": "只有在使用者明確說『直接建 / 不用給我看計畫 / 別問我』時才用這個——
+它會跳過計畫卡直接建圖。正常情況一律用 plan_pipeline（讓使用者先看到計畫卡）。",
+    "input_schema": {"properties": {"instruction": {}}},
+  },
+  {
+    "name": "modify_current_chart",
+    "description": "調整「目前畫面上這張圖」時用（例：拿掉區帶、加 tooltip 顯示 lotID、
+換成看 EQP-05、線改虛線）。只在對話中已經有一張圖時能用。",
+    "input_schema": {"properties": {"instruction": {}}},
+  },
+  {
+    "name": "setup_automation",
+    "description": "使用者要讓目前這張圖「自動跑」——定時巡檢 / 定期檢查 / 觸發告警——時用
+（關鍵詞：巡檢、排程、定期、每天/每小時、告警通知）。
+注意：使用者只說「啟用 / 上架 / 存成正式 skill」而沒提排程時，那是 activate_skill 的事。",
+    "input_schema": {"type": "object", "properties": {}},
+  },
+  {
+    "name": "activate_skill",
+    "description": "使用者要把畫面上這張圖或某個既有 skill 啟用 / 上架 / 發布時用。
+會出一張確認卡（名稱與描述可編輯），使用者按確認才會啟用——你不能直接啟用。
+suggested_name / suggested_description 由你自己從對話與圖的內容擬——不要為了名稱或描述反問使用者。",
+    "input_schema": {"properties": {
+      "slug": {"description": "既有 skill 的 slug（畫面上剛建的圖免填）"},
+      "suggested_name": {"description": "你建議的 Skill 名稱（不超過 20 字）"},
+      "suggested_description": {"description": "你建議的一句話描述"},
+    }},
+  },
+]</code></pre>
+
+      <h3 style="margin-top:20px">④ 動態加入 tools（run_chat_agent() 內）</h3>
+      <table>
+        <thead><tr><th>Tool</th><th>加入條件</th><th>description 來源</th><th>程式碼行</th></tr></thead>
+        <tbody>
+          <tr><td><code>invoke_skill</code></td><td>永遠加入</td><td>寫死在檔案</td><td>第 856–866 行</td></tr>
+          <tr><td>authorized builtin reads<br>（alarm、knowledge 等）</td><td>IT admin 授權的 kind=builtin</td><td>寫死在 <code>_BUILTIN_READ</code> dict</td><td>第 873–891 行</td></tr>
+          <tr><td>authorized alarm writes<br>（ack_alarm、dispose_alarm 等）</td><td>IT admin 授權的 kind=builtin</td><td>寫死在 <code>_ALARM_WRITES</code> dict</td><td>同上</td></tr>
+          <tr><td>外部 System MCP</td><td>IT admin 授權的 kind=external</td><td><strong>從 DB 動態讀取</strong>：<code>mcp_definitions.description</code>（最長 3000 字元）</td><td>第 895–919 行</td></tr>
+          <tr><td><code>manage_domain_skill</code></td><td>永遠加入</td><td>寫死在檔案</td><td>第 923–934 行</td></tr>
+          <tr><td><code>load_skill</code></td><td>有標準 Skill index 時</td><td>寫死在檔案</td><td>第 940–952 行</td></tr>
+          <tr><td><code>read_memory</code> / <code>remember_preference</code></td><td>永遠加入</td><td>寫死在檔案</td><td>第 958–980 行</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">外部 MCP description 的組裝方式（第 895–919 行）</h3>
+      <pre><code># 1. 從 Java 拿 IT admin 授權給 agent 的工具清單
+granted = await _granted_agent_tools(java)
+
+# 2. 過濾出 kind=external（System MCP）
+ext_keys = [g["key"] for g in granted if g.get("kind") == "external"]
+
+# 3. 查 mcp_definitions 完整記錄
+defs = {m.get("name"): m for m in (await java.list_mcps() or [])}
+
+# 4. 把 description 從 DB 拿出來當 tool description
+for key in ext_keys:
+    d = defs.get(key) or {}
+    tools.append({
+        "name": key,
+        "description": str(d.get("description") or key)[:3000],  # DB 欄位，最長 3000
+        "input_schema": structured or {"type": "object", ...},    # 從 input_schema 解析
+    })</code></pre>
+      <div class="note">外部 MCP 的 description 不寫在程式碼裡——完全來自 DB <code>mcp_definitions.description</code>。這是 CLAUDE.md 的核心原則：「MCP description 是唯一文件來源」。改 MCP 行為時只改 DB，不改程式。</div>
+
+      <h3 style="margin-top:20px">整體 prompt 架構總覽</h3>
+      <pre><code>system（每次呼叫 LLM 前組裝）
+  = _SYSTEM（寫死，19 行）
+  + [目前狀態] 節點列表（有圖才加）
+  + [Skill 目錄] 標準 Skill index（從 DB）
+  + [記憶索引] 使用者偏好（從 DB）
+
+tools（每次呼叫 LLM 前組裝）
+  = _TOOLS（7 個，寫死）
+  + invoke_skill（寫死）
+  + granted builtin reads/writes（IT admin 授權，description 寫死）
+  + 外部 System MCP（IT admin 授權，description 來自 DB）
+  + manage_domain_skill（寫死）
+  + load_skill（有 Skill index 時加，寫死）
+  + read_memory / remember_preference（寫死）</code></pre>
     </div>
   </section>
 
