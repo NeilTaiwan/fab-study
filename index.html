@@ -573,6 +573,8 @@
   <a href="#q54"><span class="nav-num">54</span>所有 AI 行為是否都在 python_ai_sidecar/ 內？</a>
   <a href="#q55"><span class="nav-num">55</span>Chat 問 Agent：前端→Java→Python 全流程與 Graph 入口</a>
   <a href="#q56"><span class="nav-num">56</span>新路 Chat Agent：完整 _SYSTEM prompt 與所有 tools 原始碼</a>
+  <a href="#q57"><span class="nav-num">57</span>System MCP 的本質：API 封裝，四個使用場景</a>
+  <a href="#q58"><span class="nav-num">58</span>mcp_foreach 是什麼？等於巢狀 API call？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -4976,6 +4978,105 @@ tools（每次呼叫 LLM 前組裝）
   + manage_domain_skill（寫死）
   + load_skill（有 Skill index 時加，寫死）
   + read_memory / remember_preference（寫死）</code></pre>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q57 -->
+  <section class="qa-block" id="q57">
+    <div class="q-block">
+      <div class="q-label">Q57</div>
+      <div class="q-text">System MCP 的本質是什麼？它真的是 AI MCP 嗎？在哪些地方被用到？</div>
+    </div>
+    <div class="a-block">
+      <p>System MCP 的本質就是一個 <strong>「已命名的 HTTP API 代理」</strong>，跟 AI 領域定義的 MCP（Model Context Protocol）沒有關係。它只是這個平台自己造的術語。</p>
+
+      <h3 style="margin-top:16px">DB 的真實樣子（V17__list_mcps.sql）</h3>
+      <pre><code>INSERT INTO mcp_definitions (name, mcp_type, visibility, description, api_config, input_schema)
+VALUES (
+  'list_active_lots', 'system', 'public',
+  '== What == 列出目前還在跑的 lot...',
+  '{"endpoint_url": "http://localhost:8012/api/v1/lots?status=active", "method": "GET", "headers": {}}',
+  '{"fields": []}'
+)</code></pre>
+
+      <div class="note">每一行 = 一個名字 + 一個 HTTP endpoint + method + 說明文字。input_schema 對 list 類全是空的 <code>{"fields": []}</code>。</div>
+
+      <h3 style="margin-top:20px">關鍵事實</h3>
+      <table>
+        <thead><tr><th>問題</th><th>答案</th></tr></thead>
+        <tbody>
+          <tr><td>1 個 MCP = 幾個 endpoint？</td><td><strong>1 對 1</strong>，<code>api_config</code> 只有一個 <code>endpoint_url</code></td></tr>
+          <tr><td>有沒有處理邏輯？</td><td>沒有。sidecar 收到 name → 查 DB → 直接打那個 HTTP URL → 把 response 回傳</td></tr>
+          <tr><td>是 Anthropic MCP 協議？</td><td>不是。只是平台自己的命名，本質是 API 封裝</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">四個被用到的地方</h3>
+
+      <h4 style="margin-top:12px">① Chat Agent tool（chat_agent_loop.py）</h4>
+      <p>IT admin 授權某個 MCP 給 Coordinator → LLM 可以呼叫它。</p>
+      <pre><code>LLM 決定呼叫 → _run_tool() → _call_system_mcp()
+  → 查 DB 拿 endpoint_url → HTTP GET/POST → 回傳結果給 LLM</code></pre>
+
+      <h4 style="margin-top:12px">② Pipeline Builder block（block_mcp_call / block_mcp_proxy）</h4>
+      <p>Builder 把 MCP 當成 DAG 中的一個 block 節點。</p>
+      <pre><code>pipeline 執行 → BlockRegistry 認出 mcp_proxy
+  → McpProxyBlockExecutor → 查 DB 拿 endpoint_url → HTTP call → 回傳 DataFrame</code></pre>
+      <p>兩種 executor：</p>
+      <ul style="margin-left:20px;margin-top:4px">
+        <li><code>block_mcp_call</code>：通用版，Builder 用 <code>mcp_name</code> 參數指定</li>
+        <li><code>block_mcp_proxy</code>：V54 自動衍生，Admin 勾選「產生 block」後 Java 自動建立</li>
+      </ul>
+
+      <h4 style="margin-top:12px">③ block_mcp_foreach（逐行呼叫）</h4>
+      <p>對上游 DataFrame 每一行各呼叫一次 MCP，把回傳結果 merge 成新欄位。詳見 Q58。</p>
+
+      <h4 style="margin-top:12px">④ MCP Derivative Generator（mcp_derivative/generator.py）</h4>
+      <p>Admin 建 MCP 時勾「產生衍生 block + skill」→ Haiku 讀 description + input_schema → 生成草稿供 Admin review。這是唯一有 LLM 參與的地方，但 LLM 只是在生成說明文件，不是在執行 MCP。</p>
+
+      <div class="note" style="margin-top:12px"><strong>共同點</strong>：四個地方的執行路徑最終都一樣——查 DB 拿 <code>api_config.endpoint_url</code> → 直接打 HTTP。沒有任何地方有特殊 AI 邏輯。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q58 -->
+  <section class="qa-block" id="q58">
+    <div class="q-block">
+      <div class="q-label">Q58</div>
+      <div class="q-text">block_mcp_foreach 是什麼？等於巢狀 API call 嗎？</div>
+    </div>
+    <div class="a-block">
+      <p>對，就是對 DataFrame 每一行做一次 API call，把回傳 JSON merge 成新欄位。「MCP」只是包裝用的名詞，底層就是 HTTP。</p>
+
+      <h3 style="margin-top:16px">結構</h3>
+      <pre><code>Pipeline DAG
+  └─ block_mcp_foreach
+       └─ for each row in upstream_dataframe:
+              HTTP GET/POST → endpoint_url   ← 就是一個 API call
+              merge result back into row</code></pre>
+
+      <h3 style="margin-top:16px">使用範例（docstring 原文）</h3>
+      <pre><code># Skill 5 pattern: 對每筆 process 去抓 APC context
+process_history
+  → mcp_foreach(
+      mcp_name='get_process_context',
+      args_template={'targetID': '$lotID', 'step': '$step'},  # $col = 從當前 row 取值
+      result_prefix='apc_'
+    )
+  → downstream block</code></pre>
+
+      <h3 style="margin-top:16px">技術細節</h3>
+      <table>
+        <thead><tr><th>機制</th><th>實作</th></tr></thead>
+        <tbody>
+          <tr><td>參數模板</td><td><code>args_template</code> 裡 <code>"$col"</code> 會被替換成當前 row 的欄位值</td></tr>
+          <tr><td>並發控制</td><td><code>asyncio.Semaphore(max_concurrency=5)</code>，最多 5 個同時飛</td></tr>
+          <tr><td>錯誤處理</td><td>任一行失敗 → 整個 block 停（fail-fast）</td></tr>
+          <tr><td>Row 上限</td><td>500 行安全上限，避免 DoS 目標 API</td></tr>
+          <tr><td>結果 merge</td><td>flat dict → 每個 key 成新欄位；list → 取第一筆；其他 → JSON string</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">本質：<strong>batch API call with row-level fan-out</strong>。跟「AI MCP」毫無關係，就是一個對每行資料打一次外部 API 的 block。</div>
     </div>
   </section>
 
