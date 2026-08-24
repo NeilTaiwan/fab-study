@@ -571,6 +571,7 @@
   <a href="#q52"><span class="nav-num">52</span>LangGraph 的所有 Node / Edge / Graph 設計全覽</a>
   <a href="#q53"><span class="nav-num">53</span>有沒有掛載 Agent Tracing 系統？</a>
   <a href="#q54"><span class="nav-num">54</span>所有 AI 行為是否都在 python_ai_sidecar/ 內？</a>
+  <a href="#q55"><span class="nav-num">55</span>Chat 問 Agent：前端→Java→Python 全流程與 Graph 入口</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -4707,6 +4708,120 @@ plan_proposed / plan_confirmed / plan_user_edited</code></pre>
 aiops-app/api/admin/      ← 一個獨立的 Admin 開發工具（直連 Claude，繞過 sidecar）
 其他服務                   ← 完全沒有 AI</code></pre>
       <div class="note" style="margin-top:8px">Admin agent 繞過 sidecar 是合理選擇——它是開發者工具而非 user-facing 功能，不需要 sidecar 的 auth、rate limit、tool dispatch 等機制。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q55 -->
+  <section class="qa-block" id="q55">
+    <div class="q-block">
+      <div class="q-label">Q55</div>
+      <div class="q-text">Chat 問 Agent：前端→Java→Python 的完整流程與 Graph 入口在哪？</div>
+    </div>
+    <div class="a-block">
+      <p>一條 chat 訊息從使用者送出到 LLM 回應，共跨 3 個服務、5 個關鍵節點：</p>
+
+      <h3 style="margin-top:16px">① Frontend（aiops-app :8000）</h3>
+      <pre><code>aiops-app/src/app/api/agent/chat/route.ts
+  POST /api/agent/chat
+    → fetch(`${AGENT_BASE_URL}/api/v1/agent/chat/stream`)
+    → 帶使用者 JWT（authHeaders()）
+    → 回傳 SSE stream 直通給 browser</code></pre>
+      <div class="note">AGENT_BASE_URL 預設 <code>http://localhost:8000</code>（從 .env 讀取）。Frontend 只做 proxy，不碰業務邏輯。</div>
+
+      <h3 style="margin-top:20px">② Java（aiops-java-api :8002）</h3>
+      <pre><code>AgentProxyController.java  @RequestMapping("/api/v1/agent")
+  POST /chat  →  ANY_ROLE（任何登入使用者可用）
+    →  sseBridge.bridge(
+         sidecar.postSse("/internal/agent/chat", req, caller), "chat"
+       )
+  SSE 轉發：SseEmitterBridge 把 sidecar 的 Flux&lt;SSE&gt; → Spring MVC SseEmitter</code></pre>
+      <div class="note">Java 唯一職責：驗 JWT、注入 CallerContext（userID、role）、SSE 橋接。不跑任何 LLM。</div>
+
+      <h3 style="margin-top:20px">③ Python Sidecar（python_ai_sidecar :8050）</h3>
+      <pre><code>routers/agent.py  prefix=/internal/agent
+  POST /internal/agent/chat
+    → _chat_stream()
+        if CHAT_AGENT_LOOP_ENABLED=1
+           AND message 不以 "[" 開頭（非舊格式）
+          → _chat_stream_agent_loop()
+              → run_chat_agent()        ← 架構一：tool-use loop
+        else
+          → _chat_stream_native()
+              → orchestrator_v2 LangGraph graph  ← 架構二：StateGraph</code></pre>
+
+      <h3 style="margin-top:20px">④ 兩條路的 Graph 入口</h3>
+      <table>
+        <thead><tr><th>路徑</th><th>條件</th><th>入口函數</th><th>架構</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>新路（ENABLED=1）</strong></td>
+            <td><code>CHAT_AGENT_LOOP_ENABLED=1</code>，生產預設 ON</td>
+            <td><code>run_chat_agent()</code><br><small>agent_orchestrator_v2/chat_agent_loop.py</small></td>
+            <td>plain async while loop，Anthropic tool-use；MAX_TOOL_ROUNDS=8</td>
+          </tr>
+          <tr>
+            <td><strong>舊路（fallback）</strong></td>
+            <td>flag=0 或訊息以 "[" 開頭</td>
+            <td><code>_chat_stream_native()</code> → <code>app.astream_events()</code><br><small>agent_orchestrator_v2/graph.py</small></td>
+            <td>LangGraph StateGraph；entry node: <code>load_context</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">⑤ 新路（tool-use loop）節點序列</h3>
+      <pre><code>run_chat_agent()
+  while rounds &lt; MAX_TOOL_ROUNDS:
+    1. build_messages()          ← 組裝 system_prompt + history + user msg
+    2. llm.messages.create()     ← 單次 Anthropic API call
+    3. if stop_reason == "tool_use":
+         execute_tool(tool_name, tool_input)   ← dispatch tool
+         append tool_result → messages
+         continue
+    4. if stop_reason == "end_turn":
+         yield final text via SSE
+         break</code></pre>
+
+      <h3 style="margin-top:20px">⑤' 舊路（LangGraph）節點序列</h3>
+      <pre><code>agent_orchestrator_v2/graph.py  build_graph()
+  START
+    → load_context           (載入使用者 profile、skill catalog)
+    → coordinator_triage     (快速判斷：greeting / out_of_scope / normal)
+    → intent_classifier      (LLM 分類：5 bucket)
+    → intent_completeness    (deterministic gate：資訊夠不夠？)
+      ┌ 不夠 → clarify → (等使用者回應)
+      └ 夠   → llm_call ⇄ tool_execute  (ReAct loop)
+                → synthesis
+                → self_critique
+                → END (yield SSE)</code></pre>
+
+      <h3 style="margin-top:20px">完整流程示意圖</h3>
+      <pre><code>Browser
+  │  POST /api/agent/chat  (Next.js API route, SSE)
+  ▼
+aiops-app :8000
+  │  proxy → /api/v1/agent/chat/stream  (帶 JWT)
+  ▼
+Java :8002  AgentProxyController
+  │  驗 JWT、注入 CallerContext
+  │  SseEmitterBridge → forward SSE
+  ▼
+Python Sidecar :8050  /internal/agent/chat
+  │
+  ├─ CHAT_AGENT_LOOP_ENABLED=1 ─→  run_chat_agent()
+  │                                  Anthropic tool-use while loop
+  │
+  └─ fallback ──────────────────→  LangGraph orchestrator_v2
+                                     load_context → intent_classifier
+                                     → llm_call ⇄ tool_execute → END
+  │
+  ▼
+LLM (Claude)  ← anthropic SDK  /  get_llm_client() 統一入口
+  ▼
+SSE chunks 逆向沿 Python→Java→Frontend→Browser 串流回傳</code></pre>
+
+      <div class="note" style="margin-top:8px">
+        <strong>Builder 流程不同</strong>：/api/v1/agent/build/* 走 AgentProxyController 的 build endpoints（ADMIN_OR_PE 權限），sidecar 端進 LangGraph BuildGraph（goal_plan 為 v30 entry node），有 5 個 interrupt point 等使用者確認。Chat 跟 Build 是完全分開的兩條 graph。
+      </div>
     </div>
   </section>
 
