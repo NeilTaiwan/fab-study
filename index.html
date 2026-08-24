@@ -564,6 +564,13 @@
   <a href="#q45"><span class="nav-num">45</span>Builder ReAct Loop：每個行動都是一次獨立 LLM call 嗎？</a>
   <a href="#q46"><span class="nav-num">46</span>上游資料誰決定？資料從哪裡撈？自然語言怎麼變成 params？</a>
   <a href="#q47"><span class="nav-num">47</span>沒有 DB Schema 文件作為解釋來源，這樣危險嗎？</a>
+  <a href="#q48"><span class="nav-num">48</span>Agent 功能用什麼架構實作？是「土法煉鋼」嗎？</a>
+  <a href="#q49"><span class="nav-num">49</span>什麼時候才用 LangGraph StateGraph？</a>
+  <a href="#q50"><span class="nav-num">50</span>這個專案用了哪些 AI 框架？</a>
+  <a href="#q51"><span class="nav-num">51</span>LangGraph 怎麼用？它是這個平台的核心嗎？</a>
+  <a href="#q52"><span class="nav-num">52</span>LangGraph 的所有 Node / Edge / Graph 設計全覽</a>
+  <a href="#q53"><span class="nav-num">53</span>有沒有掛載 Agent Tracing 系統？</a>
+  <a href="#q54"><span class="nav-num">54</span>所有 AI 行為是否都在 python_ai_sidecar/ 內？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -4330,6 +4337,376 @@ Builder 做 p2（transform phase）：
           <tr><td>MCP description 強制格式</td><td>每個 MCP description 必須含 return schema 區塊（欄位名 + 型別 + 值域），並設 CI lint 驗證</td></tr>
         </tbody>
       </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q48 -->
+  <section class="qa-block" id="q48">
+    <div class="q-block">
+      <div class="q-label">Q48</div>
+      <div class="q-text">Agent 功能用什麼架構實作？是「土法煉鋼」嗎？</div>
+    </div>
+    <div class="a-block">
+      <p>這個平台 <strong>混用三種架構</strong>，不同 surface 選擇不同方式。說是「土法煉鋼」不完全準確——更精確的說法是「刻意選最小夠用的工具」。</p>
+
+      <h3>三種架構</h3>
+      <table>
+        <thead><tr><th>架構</th><th>誰用</th><th>原理</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>① Anthropic Tool-Use Loop</strong><br><small>（原生 while 迴圈）</small></td>
+            <td>Chat Agent（prod）<br>Pipeline Builder 內層（per phase ReAct）</td>
+            <td>純 Python async while loop，LLM 輸出 tool_use → 系統執行 → 結果塞回 messages → 下一輪；stop_reason="end_turn" 時停止</td>
+          </tr>
+          <tr>
+            <td><strong>② LangGraph StateGraph</strong><br><small>（圖形化路由）</small></td>
+            <td>Pipeline Builder 外層<br>Chat Agent 舊版 fallback</td>
+            <td>StateGraph + MemorySaver checkpointer，支援 interrupt()/resume，適合需要「暫停等人類確認」的流程</td>
+          </tr>
+          <tr>
+            <td><strong>③ Plain if/else dispatcher</strong><br><small>（非框架）</small></td>
+            <td>Block Advisor</td>
+            <td>classify_advisor_intent 分桶後走固定 if/else，刻意不用任何框架，原始碼明確說明：<code>"This is intentionally NOT LangGraph."</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">各 Surface 對照</h3>
+      <table>
+        <thead><tr><th>Surface</th><th>架構</th><th>框架</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td>Chat（prod）</td><td>Tool-use loop</td><td>無框架</td><td><code>chat_agent_loop</code>，8 round 上限，LLM 自決停/繼續</td></tr>
+          <tr><td>Chat（fallback）</td><td>StateGraph</td><td>LangGraph</td><td>classifier → llm_call → tool_execute 圖（被 tool-use loop 取代中）</td></tr>
+          <tr><td>Pipeline Builder 外層</td><td>StateGraph</td><td>LangGraph + MemorySaver</td><td>goal_plan → agentic_phase_loop → verifier，含多個 interrupt 點</td></tr>
+          <tr><td>Pipeline Builder 內層（per phase）</td><td>Tool-use loop</td><td>無框架</td><td>ReAct loop，最多 8 round（chart/alarm 12）</td></tr>
+          <tr><td>Block Advisor</td><td>if/else</td><td>無框架</td><td>5 buckets 固定分派</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">為什麼「土法煉鋼」不是技術債？</h3>
+      <table>
+        <thead><tr><th>框架化 Agent（如 AutoGen / CrewAI）</th><th>這裡的做法</th></tr></thead>
+        <tbody>
+          <tr><td>幫你包好 message history 管理</td><td>自己管，完全掌控 context window</td></tr>
+          <tr><td>幫你做 tool dispatch</td><td>自己寫 execute()，error handling 精確</td></tr>
+          <tr><td>框架決定何時停止</td><td>LLM 的 stop_reason 決定，行為可預期</td></tr>
+          <tr><td>框架的 memory / retry 是黑盒</td><td>全部自己實作，出問題可追查</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        <strong>代價</strong>：框架能幫你做的 retry、memory truncation、tool error handling 全部要自己寫。這是選擇「可控性」換來的維護成本。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q49 -->
+  <section class="qa-block" id="q49">
+    <div class="q-block">
+      <div class="q-label">Q49</div>
+      <div class="q-text">什麼時候才用 LangGraph StateGraph？</div>
+    </div>
+    <div class="a-block">
+      <p>LangGraph 只在兩個地方出現，使用理由非常明確。</p>
+
+      <h3>場景一：Pipeline Builder 外層（硬需求）</h3>
+      <p>核心原因：<strong>需要 <code>interrupt()</code> 暫停 + MemorySaver 恢復</strong>。Builder flow 中有 5 個 interrupt 點：</p>
+      <table>
+        <thead><tr><th>Node</th><th>暫停原因</th></tr></thead>
+        <tbody>
+          <tr><td><code>goal_plan_confirm_gate</code></td><td>Planner 提出 phases，等 user 確認 / 修改</td></tr>
+          <tr><td><code>step_pause_gate</code></td><td>debug_step_mode，逐 phase 暫停讓人看</td></tr>
+          <tr><td><code>judge_clarify_pause</code></td><td>Verifier 覺得結果有歧義，讓 user 選方向</td></tr>
+          <tr><td><code>halt_handover</code></td><td>Build 卡死，讓 user 選放棄 / 改需求</td></tr>
+          <tr><td><code>confirm_gate</code></td><td>舊版 plan confirm（legacy）</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">Builder 完整路由圖</h3>
+      <pre><code>START → goal_plan → goal_plan_confirm_gate [interrupt]
+         ↓
+    agentic_phase_loop ←──────────────────────┐
+         ↓ (run_verifier)                     │
+    phase_verifier                            │
+    ├─ ACCEPT + 有更多 phase ─────────────────┘
+    ├─ ACCEPT + 全部完成 → finalize → END
+    ├─ REJECT → phase_revise
+    │     ├─ retry → agentic_phase_loop
+    │     ├─ plan_patch → agentic_phase_loop
+    │     └─ 卡死 → build_postmortem → halt_handover [interrupt]
+    └─ judge_pause → judge_clarify_pause [interrupt]
+          ├─ replan → goal_plan
+          └─ continue → agentic_phase_loop</code></pre>
+
+      <h3 style="margin-top:16px">場景二：Chat Agent 舊版 classifier graph（正在淘汰）</h3>
+      <pre><code>load_context → coordinator_triage
+  → intent_classifier_builder（builder 意圖分類）
+  → intent_classifier（chat 意圖分類）
+  → intent_completeness（需求完整性判斷）
+  → llm_call ⇄ tool_execute（loop）
+  → synthesis → self_critique → END</code></pre>
+      <p>用 LangGraph 是因為多層 classifier + 每層多條分支，conditional_edges 比手寫 if/else 清楚。但正被 <code>chat_agent_loop</code>（純 tool-use loop）取代，原因是「分類器 → 強制走固定路徑」讓 agent 太僵硬。</p>
+
+      <h3 style="margin-top:16px">使用 LangGraph 的判斷條件</h3>
+      <table>
+        <thead><tr><th>條件</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>需要 interrupt / resume</strong></td><td>圖中途暫停等人類回應，之後從同一個 state 恢復 → <strong>只有這個是硬需求</strong></td></tr>
+          <tr><td>複雜的多路 conditional routing</td><td>10+ 個 node、每個 node 後有 3-5 條分支 → conditional_edges 比 if/else 清楚</td></tr>
+          <tr><td>State 需跨多個 node 累積</td><td>TypedDict state 自動 merge，不用手傳</td></tr>
+        </tbody>
+      </table>
+
+      <div class="note" style="margin-top:12px">
+        反過來說：<strong>不需要 interrupt + routing 不複雜 → 用 plain loop 或 if/else</strong>，沒必要引 LangGraph。Chat agent 最新版改回 plain tool-use loop 就是最好的例子。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q50 -->
+  <section class="qa-block" id="q50">
+    <div class="q-block">
+      <div class="q-label">Q50</div>
+      <div class="q-text">這個專案用了哪些 AI 框架？</div>
+    </div>
+    <div class="a-block">
+      <h3>核心 AI 框架（python_ai_sidecar）</h3>
+      <table>
+        <thead><tr><th>框架</th><th>版本</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Anthropic SDK</strong></td><td><code>>=0.42.0,&lt;1.0.0</code></td><td>直接呼叫 Claude API（tool-use、streaming、prompt cache）；所有 LLM call 主路</td></tr>
+          <tr><td><strong>LangGraph</strong></td><td><code>>=0.2.0</code></td><td>狀態圖路由 + MemorySaver checkpointer（interrupt/resume）；Pipeline Builder 外層、Chat fallback graph</td></tr>
+          <tr><td><strong>LangChain Core</strong></td><td><code>>=0.3.0</code></td><td>Message 型別（AIMessage、ToolMessage、HumanMessage）；跨 node 的 message 格式標準</td></tr>
+          <tr><td><strong>FastMCP</strong></td><td><code>mcp</code> package</td><td>真正的 Claude MCP Server；只有 <code>mcp_pipeline_builder/server.py</code> 用，供 Claude Desktop cowork</td></tr>
+          <tr><td><strong>Mem0</strong></td><td><code>mem0ai>=0.1.29</code></td><td>語意記憶 backend（Mem0 cloud），agent 存取 user 偏好/規則</td></tr>
+          <tr><td><strong>tiktoken</strong></td><td><code>>=0.7.0</code></td><td>離線 token 計數（context budget 控管）</td></tr>
+          <tr><td><strong>pandas / numpy / scipy</strong></td><td>固定版本</td><td>Pipeline block 的資料處理（58 個 block）</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">LLM Provider 抽象層（自寫，不用 LangChain LLM wrapper）</h3>
+      <p><code>agent_helpers_native/llm_client.py</code> 自行實作多 provider 切換，統一介面：</p>
+      <table>
+        <thead><tr><th>Provider</th><th>實際 SDK</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>anthropic</code>（預設）</td><td><code>anthropic.AsyncAnthropic</code></td><td>Claude Sonnet / Haiku，支援 prompt cache</td></tr>
+          <tr><td><code>ollama</code></td><td><code>openai.AsyncOpenAI</code>（base_url 換掉）</td><td>任何 OpenAI-compatible endpoint（Ollama、vLLM、LMStudio、OpenRouter）</td></tr>
+          <tr><td><code>internal-proxy</code></td><td>繼承 OllamaLLMClient</td><td>自建代理層</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">刻意沒用的東西</h3>
+      <p>LangChain 只用了 <code>langchain-core</code> 的 Message 型別，沒有用：</p>
+      <ul style="margin-left:20px; line-height:2">
+        <li>❌ LangChain AgentExecutor</li>
+        <li>❌ LangChain tools wrapper</li>
+        <li>❌ LangChain memory / LangChain LLM wrappers</li>
+        <li>❌ AutoGen / CrewAI / Semantic Kernel</li>
+      </ul>
+      <div class="note" style="margin-top:8px">原因：要完全掌控 tool dispatch、context window、retry 邏輯，不想被框架黑盒包走。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q51 -->
+  <section class="qa-block" id="q51">
+    <div class="q-block">
+      <div class="q-label">Q51</div>
+      <div class="q-text">LangGraph 怎麼用？它是這個平台的核心嗎？</div>
+    </div>
+    <div class="a-block">
+      <p>LangGraph <strong>不是</strong> LLM reasoning 的核心，而是管理「各個 node 之間要怎麼走」的外層框架。實際的 AI 思考發生在 node 內部（Planner/Builder 的 LLM call），LangGraph 只負責「跑完這個 node 之後要去哪裡」。</p>
+
+      <h3>三個核心機制</h3>
+      <pre><code>① StateGraph — 定義節點與邊
+g = StateGraph(BuildGraphState)
+g.add_node("goal_plan", goal_plan_node)
+g.add_conditional_edges("phase_verifier", _route_fn, {"accept": "agentic_phase_loop", "done": "finalize"})
+
+② MemorySaver — 每個 node 跑完自動存 checkpoint
+_compiled = g.compile(checkpointer=MemorySaver())
+
+③ interrupt() — 暫停等待人類輸入
+user_response = interrupt({"kind": "goal_plan_confirm_required", "phases": phases})
+# graph 在此完全暫停 → user 在 UI 確認 → 從同一個 checkpoint 恢復</code></pre>
+
+      <h3 style="margin-top:16px">是核心嗎？</h3>
+      <table>
+        <thead><tr><th>角色</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><strong>真正的核心</strong></td><td>Anthropic tool-use loop（LLM 思考）+ 各 node 的邏輯（Planner prompt、Builder ReAct）</td></tr>
+          <tr><td><strong>LangGraph 的角色</strong></td><td>讓 node 可以「暫停等人、之後恢復」的 plumbing</td></tr>
+        </tbody>
+      </table>
+      <pre><code>如果拿掉 LangGraph → 換成純 if/else 路由
+  ✅ 可以做到：node 間的路由、狀態傳遞
+  ❌ 做不到：interrupt/resume（graph 中途暫停等 user 確認）
+
+如果拿掉 Anthropic tool-use loop → LangGraph 空跑
+  ❌ 什麼 AI 能力都沒有，只剩路由殼</code></pre>
+      <div class="note" style="margin-top:8px">Chat agent 新版（prod）就是「把 LangGraph 拿掉，改回純 while loop」——因為 chat 不需要 interrupt，拿掉 LangGraph 反而更輕、更靈活。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q52 -->
+  <section class="qa-block" id="q52">
+    <div class="q-block">
+      <div class="q-label">Q52</div>
+      <div class="q-text">LangGraph 的所有 Node / Edge / Graph 設計全覽</div>
+    </div>
+    <div class="a-block">
+      <p>整個專案有 <strong>兩個獨立的 StateGraph</strong>。</p>
+
+      <h3>Graph 1：Builder Graph（主要）— <code>agent_builder/graph_build/graph.py</code></h3>
+      <table>
+        <thead><tr><th>Node</th><th>類型</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>goal_plan</code></td><td>LLM（Haiku）</td><td>Planner：user 指令 → phase 計畫</td></tr>
+          <tr><td><code>goal_plan_confirm_gate</code></td><td><strong>interrupt</strong></td><td>暫停等 user 確認/修改 phases</td></tr>
+          <tr><td><code>task_contract_extractor</code></td><td>LLM（Haiku）</td><td>確認後提取 task contract（給 verifier 用）</td></tr>
+          <tr><td><code>resolve_presentation_contracts</code></td><td>純 code</td><td>解析各 phase 的呈現需求</td></tr>
+          <tr><td><code>agentic_phase_loop</code></td><td>LLM ReAct（Haiku）</td><td>Builder：per-phase 工具迴圈（主力）</td></tr>
+          <tr><td><code>phase_verifier</code></td><td>純 code + 偶爾 vision</td><td>結構驗證（Check A/B/C/C2/F1/F2）</td></tr>
+          <tr><td><code>step_pause_gate</code></td><td><strong>interrupt</strong></td><td>debug 模式：逐 phase 暫停</td></tr>
+          <tr><td><code>judge_clarify_pause</code></td><td><strong>interrupt</strong></td><td>Verifier 有疑義時讓 user 選方向</td></tr>
+          <tr><td><code>phase_revise</code></td><td>LLM（Haiku）</td><td>Repairer：root cause + 策略建議</td></tr>
+          <tr><td><code>coordinator_diagnose</code></td><td>LLM</td><td>波2 G2：Coordinator 分析卡死原因</td></tr>
+          <tr><td><code>plan_patch</code></td><td>LLM（Haiku）</td><td>計畫修訂：拆 phase 或降目標</td></tr>
+          <tr><td><code>build_postmortem</code></td><td>LLM</td><td>全局 post-mortem → replan hint</td></tr>
+          <tr><td><code>halt_handover</code></td><td><strong>interrupt</strong></td><td>Build 卡死：讓 user 選放棄/改需求</td></tr>
+          <tr><td><code>finalize</code></td><td>純 code</td><td>收尾：輸出最終 pipeline JSON</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">Builder Graph 主路徑 Edges（v30 現行）</h3>
+      <pre><code>START → goal_plan → goal_plan_confirm_gate [interrupt]
+                       ↓
+         task_contract_extractor → resolve_presentation_contracts
+                       ↓
+              agentic_phase_loop ←──────────────────────┐
+                       │ run_verifier                    │
+                       ↓                                 │
+              phase_verifier                             │
+              ├─ ACCEPT + 有更多 phase ──────────────────┘
+              ├─ ACCEPT + 全部完成 → finalize → END
+              ├─ debug_step_mode  → step_pause_gate [interrupt]
+              └─ judge_pause      → judge_clarify_pause [interrupt]
+                                    ├─ continue → agentic_phase_loop
+                                    ├─ replan   → goal_plan
+                                    └─ cancel   → halt_handover [interrupt]
+
+              phase_revise（Repairer）
+              ├─ retry      → agentic_phase_loop
+              ├─ plan_patch → plan_patch（可自我迴圈）
+              └─ 卡死       → build_postmortem → goal_plan
+                                  └─ 還是失敗 → halt_handover [interrupt]
+                                                   └─ user 放棄 → finalize</code></pre>
+
+      <h3 style="margin-top:16px">Graph 2：Chat Agent Graph（fallback）— <code>agent_orchestrator_v2/graph.py</code></h3>
+      <pre><code>Nodes:
+  load_context, coordinator_triage,
+  intent_classifier_builder, intent_classifier, intent_completeness,
+  pre_clarify_check, advisor_dispatch,
+  llm_call, tool_execute,
+  synthesis, self_critique
+
+Edges:
+  load_context → coordinator_triage
+    ├─ fast_path → synthesis
+    └─ 正常      → intent_classifier_builder
+                    ├─ builder_explain/compare → advisor_dispatch → synthesis
+                    ├─ builder_build_*         → pre_clarify_check → llm_call
+                    └─ chat intent             → intent_classifier
+                                                  → intent_completeness → llm_call
+
+  llm_call ⇄ tool_execute（loop，最多 MAX_ITERATIONS）
+    └─ end_turn → synthesis → self_critique → END</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        <strong>設計原則</strong>：State 是唯一的資料流通道，每個 node 只讀/寫 state，互相不知道彼此存在。Routing function 是純 Python 函式，看 state 裡的 <code>status</code> 決定走哪條路——LLM 不決定 flow，符合 CLAUDE.md「flow 由 graph 決定」原則。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q53 -->
+  <section class="qa-block" id="q53">
+    <div class="q-block">
+      <div class="q-label">Q53</div>
+      <div class="q-text">有沒有掛載 Agent Tracing 系統？</div>
+    </div>
+    <div class="a-block">
+      <p>沒有掛載任何主流第三方 agent tracing 系統（Langfuse、Phoenix/Arize、Honeyhive、OpenTelemetry）。有三層自建/選配機制：</p>
+
+      <table>
+        <thead><tr><th>機制</th><th>類型</th><th>狀態</th><th>去哪裡</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>LangSmith <code>@traceable</code></strong></td>
+            <td>第三方（選配）</td>
+            <td>⚠️ <strong>幾乎不運作</strong>（no-op）<br><small>langsmith 不在 requirements.txt；LANGSMITH_API_KEY 未設時純 no-op</small></td>
+            <td>LangSmith cloud（若 API key 有設）</td>
+          </tr>
+          <tr>
+            <td><strong>BuildTracer</strong><br><small><code>graph_build/trace.py</code></small></td>
+            <td>自寫（dev/debug）</td>
+            <td>選配：<code>BUILDER_TRACE_DIR</code> 未設時完全 no-op</td>
+            <td>本地 JSON 檔（每 build 一個）</td>
+          </tr>
+          <tr>
+            <td><strong>EpisodeRecorder</strong><br><small><code>observability/episode_recorder.py</code></small></td>
+            <td>自寫（生產級）</td>
+            <td>✅ 有在運作（fail-open，Java 掛了不影響 build）</td>
+            <td>Java API → PostgreSQL <code>supervisor_runs</code> 表</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">BuildTracer 記錄什麼</h3>
+      <pre><code>{
+  "build_id": "hex8",
+  "graph_steps":    [{node, status, duration_ms, ...}],
+  "llm_calls":      [{node, system_chars, user_msg, raw_response, parsed}],
+  "decision_records": [{phase_id, round, tool_result, llm_response, candidates}]
+}</code></pre>
+
+      <h3 style="margin-top:12px">EpisodeRecorder 記錄什麼（事件類型）</h3>
+      <pre><code>phase_started / phase_done
+block_picked / verifier_reject
+repair_triggered / repair_outcome
+memory_write（W1/W2/W3 記憶層）
+plan_proposed / plan_confirmed / plan_user_edited</code></pre>
+
+      <div class="note" style="margin-top:12px">
+        <strong>缺口</strong>：沒有系統性的 LLM call latency、token usage、cost 追蹤儀表板。想要這些，目前需要自己查 EpisodeRecorder 的 DB 資料或看 BuildTracer 的 JSON 檔。
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q54 -->
+  <section class="qa-block" id="q54">
+    <div class="q-block">
+      <div class="q-label">Q54</div>
+      <div class="q-text">所有 AI 行為是否都在 python_ai_sidecar/ 內？</div>
+    </div>
+    <div class="a-block">
+      <p><strong>不是全部。</strong>主體（99%）在 sidecar，但有一個例外在 Frontend。</p>
+
+      <table>
+        <thead><tr><th>服務</th><th>AI 行為</th><th>說明</th></tr></thead>
+        <tbody>
+          <tr><td><code>python_ai_sidecar/</code></td><td>✅ 全部核心</td><td>Chat agent、Pipeline Builder、MCP derivative generator、Embedding backfill；所有 LLM call 透過 <code>get_llm_client()</code> 統一發出</td></tr>
+          <tr><td><code>aiops-app/api/admin/agent/</code></td><td>⚠️ 例外</td><td>Admin 設計 MCP/Skill 的 AI 助理，<strong>直接呼叫 Claude API，繞過 sidecar</strong>；Haiku hardcode；原始碼注釋：「直接呼叫 Claude API（非 aiops-agent loop）」</td></tr>
+          <tr><td><code>java-backend/</code></td><td>❌ 無</td><td>只做 CRUD、auth、DB</td></tr>
+          <tr><td><code>java-scheduler/</code></td><td>❌ 無</td><td>—</td></tr>
+          <tr><td><code>ontology_simulator/</code></td><td>❌ 無</td><td>純資料模擬</td></tr>
+          <tr><td><code>mcp_pipeline_builder/</code></td><td>❌ 無直接 LLM call</td><td>只是 FastMCP server，把請求轉給 sidecar</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:16px">架構意圖</h3>
+      <pre><code>python_ai_sidecar/        ← 所有生產 AI 行為的家（統一入口）
+aiops-app/api/admin/      ← 一個獨立的 Admin 開發工具（直連 Claude，繞過 sidecar）
+其他服務                   ← 完全沒有 AI</code></pre>
+      <div class="note" style="margin-top:8px">Admin agent 繞過 sidecar 是合理選擇——它是開發者工具而非 user-facing 功能，不需要 sidecar 的 auth、rate limit、tool dispatch 等機制。</div>
     </div>
   </section>
 
