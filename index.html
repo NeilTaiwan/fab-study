@@ -575,6 +575,8 @@
   <a href="#q56"><span class="nav-num">56</span>新路 Chat Agent：完整 _SYSTEM prompt 與所有 tools 原始碼</a>
   <a href="#q57"><span class="nav-num">57</span>System MCP 的本質：API 封裝，四個使用場景</a>
   <a href="#q58"><span class="nav-num">58</span>mcp_foreach 是什麼？等於巢狀 API call？</a>
+  <a href="#q59"><span class="nav-num">59</span>System MCP 廣義算 MCP 嗎？標準 MCP 能服務別人？</a>
+  <a href="#q60"><span class="nav-num">60</span>MCP 的核心是什麼？這個版本具備什麼、不具備什麼？</a>
 </nav>
 
 <!-- ── Main ── -->
@@ -5077,6 +5079,76 @@ process_history
       </table>
 
       <div class="note" style="margin-top:12px">本質：<strong>batch API call with row-level fan-out</strong>。跟「AI MCP」毫無關係，就是一個對每行資料打一次外部 API 的 block。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q59 -->
+  <section class="qa-block" id="q59">
+    <div class="q-block">
+      <div class="q-label">Q59</div>
+      <div class="q-text">System MCP 廣義上算 MCP 嗎？標準 MCP 能服務別人，這個版本呢？</div>
+    </div>
+    <div class="a-block">
+      <p>廣義上可以說是，但要區分精神與規格。</p>
+
+      <h3 style="margin-top:16px">狹義（規格）：不是 MCP</h3>
+      <p>不符合 Anthropic Model Context Protocol 規格：沒有協議層、沒有獨立 server、沒有 capability negotiation、schema 存在 PostgreSQL 而非由 server 自己宣告。</p>
+
+      <h3 style="margin-top:16px">廣義（精神）：是 MCP</h3>
+      <p>完整實現了 MCP 的核心意圖——「讓 LLM 能動態發現並使用外部能力，能力的定義與程式碼解耦」。description 寫清楚，任何讀得到 description 的 LLM 行為都一樣。</p>
+
+      <div class="note">最精確的描述：<strong>自製的輕量 tool registry，實現了 MCP 的動態解耦精神，但不遵循 MCP 協議規格。</strong></div>
+
+      <h3 style="margin-top:20px">標準 MCP vs 這個版本：能否服務別人？</h3>
+      <table>
+        <thead><tr><th></th><th>標準 MCP</th><th>這個版本</th></tr></thead>
+        <tbody>
+          <tr><td>誰能連上</td><td>任何實作 MCP client 的工具（Claude Desktop、Cursor、第三方 agent）</td><td>只有自己的 sidecar</td></tr>
+          <tr><td>外部使用者</td><td>不需要對接程式碼，連上即用</td><td>無法，沒有標準協議</td></tr>
+          <tr><td>互操作性</td><td>完整</td><td>零</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">但標準 MCP 也有同樣的前提</h3>
+      <p>標準 MCP 解決的是<strong>傳輸層的標準化</strong>，使用端依然需要 LLM 才能理解 description、決定要不要呼叫、組裝參數。沒有 LLM 的程式連上標準 MCP server，跟直接打 API 沒有本質差別。</p>
+
+      <h3 style="margin-top:16px">description 才是真正的協議</h3>
+      <p>只要 <code>mcp_definitions.description</code> 寫清楚，把它傳給任何 LLM——不管是這個 sidecar、還是另一個 agent、還是接上標準 MCP 協議——行為都一樣。這就是為何 CLAUDE.md 把「description 是唯一文件來源」列為最高原則：description 壞了，整條鏈都壞。</p>
+
+      <div class="note">這個版本是一個<strong>能自用、不能共用</strong>的 MCP 實作。</div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════ Q60 -->
+  <section class="qa-block" id="q60">
+    <div class="q-block">
+      <div class="q-label">Q60</div>
+      <div class="q-text">MCP 的核心是什麼？這個版本具備什麼、不具備什麼？</div>
+    </div>
+    <div class="a-block">
+      <p>MCP 的核心定義：</p>
+      <blockquote style="border-left:3px solid var(--accent);padding-left:16px;margin:12px 0;color:var(--text2)">
+        把「能力的定義」與「能力的使用者」解耦，讓 LLM 能動態發現並組合外部能力，而不需要程式碼預先知道有哪些能力。
+      </blockquote>
+
+      <h3 style="margin-top:16px">三個核心要素</h3>
+      <table>
+        <thead><tr><th>要素</th><th>這個版本</th><th>實作方式</th></tr></thead>
+        <tbody>
+          <tr><td><strong>① 能力描述</strong><br>LLM 理解這個能力是什麼</td><td>具備</td><td><code>mcp_definitions.description</code>，DB 管理，Admin UI 可編輯</td></tr>
+          <tr><td><strong>② 動態發現</strong><br>不 hardcode，執行時才知道有哪些能力</td><td>具備</td><td>執行時從 DB 拿，Admin 新增 MCP 不改程式碼</td></tr>
+          <tr><td><strong>③ 標準傳輸</strong><br>任何 client 都能接上</td><td>不具備</td><td>自製 HTTP + DB，只有自己的 sidecar 能用</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">結論</h3>
+      <pre><code>具備 MCP 的靈魂（① + ②）：能動態組合能力，description 驅動，不改程式碼就能新增能力
+缺少 MCP 的身體（③）  ：無法與外部互操作，封閉在自己的 sidecar 內</code></pre>
+
+      <div class="note" style="margin-top:8px">
+        靈魂決定它<strong>能不能運作</strong>——可以。<br>
+        身體決定它<strong>能不能跟別人互操作</strong>——不行。
+      </div>
     </div>
   </section>
 
